@@ -1,0 +1,9 @@
+// Add this match block INSIDE match /databases/{database}/documents
+// Keep ALL your current study-data rules. Never use allow ... if true.
+match /push_subscriptions/{uid} {
+  allow read, delete: if request.auth != null && request.auth.uid == uid;
+  allow create, update: if request.auth != null
+    && request.auth.uid == uid
+    && request.resource.data.uid == uid
+    && request.resource.data.enabled == true;
+}

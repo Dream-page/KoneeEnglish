@@ -5,10 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <!-- YouTube Error 153: 임베드 요청에서 사이트 출처를 전달하도록 설정 -->
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>Konee's English</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <meta name="theme-color" content="#7C3AED">
+    <link rel="apple-touch-icon" href="./icon-192.png">
     
     <!-- 1. Tailwind CSS 불러오기 -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -89,7 +93,7 @@
         import { Play, Pause, RotateCcw, Plus, Trash2, Edit2, Eye, EyeOff, Trophy, Sparkles, BookOpen, Calendar as CalendarIcon, RefreshCw, ChevronLeft, ChevronRight, Check, Highlighter, StickyNote, Volume2, X, List, Youtube, ExternalLink, Clock } from 'lucide-react';
         import { initializeApp } from 'firebase/app';
         import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'firebase/auth';
-        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, getDocs } from 'firebase/firestore';
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, getDocs, deleteDoc } from 'firebase/firestore';
 
         // --- Firebase Configuration ---
         // 아빠 전용 Firebase 프로젝트. 기존 self-improvement 프로젝트와 완전히 분리합니다.
@@ -110,6 +114,88 @@
         // 한 분 전용 고정 프로필 키 (동기화 코드 입력 불필요)
         const SINGLE_USER_DOC_KEY = 'konee_dad_single_profile';
         const YOUTUBE_VIDEO_ID = 'aSKKfo7oEKU';
+        // Public VAPID key only. The private key must stay in GitHub Actions secrets.
+        const PUSH_PUBLIC_KEY = 'BKDbTKqWViuMs5vTdN9eirQ_XVO2sv2g_42lwWv-LxIGX1heU3jftLiyvO15--hrwcwDyEBAbK6onAELiPkBQ_c';
+        const pushKeyBytes = (value) => {
+            const padded = value + '='.repeat((4 - value.length % 4) % 4);
+            const data = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+            return Uint8Array.from(data, ch => ch.charCodeAt(0));
+        };
+        const isIPhone = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const isStandaloneApp = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+        // 데이터 보존: 기기에 먼저 기록하고, 보류 중인 전체 기록을 순차적으로 업로드합니다.
+        const STORAGE_PREFIX = 'konee_local_';
+        const pendingJobs = new Set();
+        let lastSavedClock = 0;
+        const nextUpdatedAt = () => (lastSavedClock = Math.max(Date.now(), lastSavedClock + 1));
+        const localRead = (key) => {
+            try { return JSON.parse(localStorage.getItem(key) || 'null'); }
+            catch (error) { console.error('Damaged local data (kept intact):', key, error); return null; }
+        };
+        const hasLocalWork = () => {
+            try { return Object.keys(localStorage).some(k => k.startsWith('konee_pending_') && localStorage.getItem(k) === '1'); }
+            catch (_) { return true; }
+        };
+        const docNameForKey = (key) => key === 'konee_local_global' ? 'global_data' : key.replace('konee_local_', '');
+        const pendingKeyForLocal = (key) => key === 'konee_local_global' ? 'konee_pending_global' : key.replace('konee_local_day_', 'konee_pending_day_');
+        const cloudDoc = (name) => doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', name);
+        // 1개 문서의 이전 업로드가 끝나기 전에 후속 저장 요청을 덮어쓰지 않도록 직렬화.
+        const flushOneLocal = async (key, signedInUser) => {
+            if (!signedInUser || pendingJobs.has(key)) return;
+            const pendingKey = pendingKeyForLocal(key);
+            if (localStorage.getItem(pendingKey) !== '1') return;
+            pendingJobs.add(key);
+            try {
+                // 입력이 진행 중이면 가장 마지막 버전까지 연속 업로드.
+                for (let tries = 0; tries < 8; tries++) {
+                    if (localStorage.getItem(pendingKey) !== '1') break;
+                    const payload = localRead(key);
+                    if (!payload) break; // 파싱 실패 시 원본은 절대 지우지 않음.
+                    const version = payload.updatedAt || 0;
+                    await setDoc(cloudDoc(docNameForKey(key)), payload, { merge: true });
+                    const latest = localRead(key);
+                    if (latest && (latest.updatedAt || 0) === version) {
+                        localStorage.removeItem(pendingKey);
+                        break;
+                    }
+                }
+            } catch (error) {
+                console.warn('Cloud save will retry:', key, error);
+                // pending flag stays; do not claim remote save.
+            } finally { pendingJobs.delete(key); window.dispatchEvent(new Event('konee-storage-updated')); }
+        };
+        const flushAllLocal = (u) => {
+            if (!u || !navigator.onLine) return;
+            try {
+                Object.keys(localStorage).filter(k => /^konee_local_day_\d+$/.test(k) || k === 'konee_local_global')
+                    .filter(k => localStorage.getItem(pendingKeyForLocal(k)) === '1')
+                    .forEach(k => flushOneLocal(k, u));
+            } catch (error) { console.warn('Retry scan:', error); }
+        };
+        const saveLocallyFirst = (key, payload) => {
+            const pendingKey = pendingKeyForLocal(key);
+            const data = { ...payload, updatedAt: nextUpdatedAt() };
+            // Set pending first; a reload cannot silently replace unacknowledged local edits.
+            try {
+                localStorage.setItem(pendingKey, '1');
+                localStorage.setItem(key, JSON.stringify(data));
+                window.dispatchEvent(new Event('konee-storage-updated'));
+                return true;
+            } catch (error) {
+                alert('기기 저장 공간에 기록하지 못했습니다. 화면을 닫지 말고 전체 백업을 시도해 주세요.');
+                console.error('Critical local save failure:', error);
+                return false;
+            }
+        };
+        const shouldUseCloudCopy = (key, remote) => {
+            if (localStorage.getItem(pendingKeyForLocal(key)) === '1') return false;
+            const local = localRead(key);
+            if (!local) return true;
+            // 이전 버전 문서에는 updatedAt이 없으므로 안전하게 기기 기록을 우선합니다.
+            return Number(remote.updatedAt || 0) > Number(local.updatedAt || 0);
+        };
+
 
         // 타임라인 문자열("1:01:41" 또는 "06:14")을 초(seconds)로 변환
         const parseTimeToSeconds = (timeStr) => {
@@ -266,9 +352,14 @@
 
         const StudyApp = () => {
             const [user, setUser] = useState(null);
+            const [syncStatus, setSyncStatus] = useState('기기에 저장됨 · 로그인 후 클라우드 백업');
+            const [storageFailure, setStorageFailure] = useState(false);
             const [authReady, setAuthReady] = useState(false);
             const [loginBusy, setLoginBusy] = useState(false);
             const [loginError, setLoginError] = useState('');
+            const [pushBusy, setPushBusy] = useState(false);
+            const [pushStatus, setPushStatus] = useState('알림 설정을 확인해 주세요.');
+            const [pushEnabled, setPushEnabled] = useState(false);
             
             const [editingNoteId, setEditingNoteId] = useState(null);
             const [editEng, setEditEng] = useState("");
@@ -362,7 +453,7 @@
             useEffect(() => {
                 getRedirectResult(auth).catch((error) => {
                     console.warn('Google redirect login:', error);
-                    setLoginError('구글 로그인에 실패했어요. Firebase 승인 도메인과 로그인 설정을 확인해 주세요.');
+                    setLoginError(`구글 로그인에 실패했어요. 오류 코드: ${error.code || 'unknown'} (${error.message || '상세 정보 없음'})`);
                 });
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
                     setUser(u || null);
@@ -388,7 +479,7 @@
                         catch (redirectError) { console.error('Redirect sign in:', redirectError); }
                     }
                     if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
-                        setLoginError('로그인할 수 없어요. Firebase에서 Google 로그인과 GitHub Pages 승인 도메인을 확인해 주세요.');
+                        setLoginError(`로그인할 수 없어요. 오류 코드: ${error.code || 'unknown'} (${error.message || '상세 정보 없음'})`);
                     }
                 } finally {
                     setLoginBusy(false);
@@ -462,168 +553,105 @@
                 fetchGlobalHighlights();
             }, [showHighlightedOnly, activeTab, user]);
 
-            // Day Data 읽기 (LocalStorage 즉시 로드 -> Firebase 실시간 동기화)
+            // Day를 바꿀 때마다 기기 데이터를 즉시 불러오되, 서버의 오래된 사본은 덮어쓰지 않습니다.
             useEffect(() => {
+                const key = `konee_local_day_${currentDay}`;
                 const defaultTopic = dayScheduleData[currentDay]?.title || `Day ${currentDay} 패턴 연습`;
-                
-                // 로컬스토리지 우선 확인
-                let hasLocal = false;
-                try {
-                    const localSaved = localStorage.getItem(`konee_local_day_${currentDay}`);
-                    if (localSaved) {
-                        const parsed = JSON.parse(localSaved);
-                        setSentences(parsed.sentences || getInitialSentencesForDay(currentDay));
-                        setRepetitionCount(parsed.repetitionCount || 0);
-                        setTopic(parsed.topic || defaultTopic);
-                        hasLocal = true;
-                    }
-                } catch (e) {}
-
-                if (!hasLocal) {
-                    setTopic(defaultTopic);
-                    setSentences(getInitialSentencesForDay(currentDay));
-                    setRepetitionCount(0);
-                }
-
+                const fromLocal = localRead(key);
+                setSentences(fromLocal?.sentences || getInitialSentencesForDay(currentDay));
+                setRepetitionCount(fromLocal?.repetitionCount || 0);
+                setTopic(fromLocal?.topic || defaultTopic);
                 if (!user) return;
-                const dayDocRef = doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', `day_${currentDay}`);
-                
-                const unsubscribe = onSnapshot(dayDocRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        if (localStorage.getItem(`konee_pending_day_${currentDay}`) === "1") return;
-                        const data = docSnap.data();
-                        const nextSentences = data.sentences || getInitialSentencesForDay(currentDay);
-                        const nextRep = data.repetitionCount || 0;
-                        const nextTopic = data.topic || defaultTopic;
-                        setSentences(nextSentences);
-                        setRepetitionCount(nextRep);
-                        setTopic(nextTopic);
-                        try {
-                            localStorage.setItem(`konee_local_day_${currentDay}`, JSON.stringify({
-                                sentences: nextSentences,
-                                repetitionCount: nextRep,
-                                topic: nextTopic
-                            }));
-                        } catch (e) {}
+                const unsubscribe = onSnapshot(cloudDoc(`day_${currentDay}`), snapshot => {
+                    if (!snapshot.exists()) {
+                        // 기존 휴대폰에만 있는 기록도 나중에 백업합니다.
+                        if (localRead(key)) {
+                            localStorage.setItem(pendingKeyForLocal(key), '1');
+                            flushAllLocal(user);
+                        }
+                        return;
                     }
-                }, (error) => {
-                    console.error("Error syncing day data:", error);
-                });
-                // 로그인 전/오프라인에서 기록한 내용도 연결되면 Firebase에 업로드합니다.
-                if (localStorage.getItem(`konee_pending_day_${currentDay}`) === "1") {
+                    const remote = snapshot.data();
+                    if (!shouldUseCloudCopy(key, remote)) return;
                     try {
-                        const saved = JSON.parse(localStorage.getItem(`konee_local_day_${currentDay}`) || 'null');
-                        if (saved) setDoc(dayDocRef, saved, { merge: true })
-                            .then(() => localStorage.removeItem(`konee_pending_day_${currentDay}`))
-                            .catch(error => console.warn("Day cloud save pending:", error));
-                    } catch (e) { console.warn(e); }
-                }
+                        localStorage.setItem(key, JSON.stringify(remote));
+                        setSentences(remote.sentences || getInitialSentencesForDay(currentDay));
+                        setRepetitionCount(remote.repetitionCount || 0);
+                        setTopic(remote.topic || defaultTopic);
+                        window.dispatchEvent(new Event('konee-storage-updated'));
+                    } catch (error) { console.error('Local restore failed:', error); setStorageFailure(true); }
+                }, error => console.warn('Day cloud read unavailable:', error));
+                flushAllLocal(user);
                 return () => unsubscribe();
             }, [user, currentDay]);
 
-            // Global Data 읽기 (LocalStorage + Firebase 단일 프로필)
+            // 공통 기록도 기기 기록이 최신이면 무조건 유지. 서버의 구버전/빈 배열은 덮어쓰지 않음.
             useEffect(() => {
                 if (!user) return;
-                const globalDocRef = doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', 'global_data');
-
-                const unsubscribe = onSnapshot(globalDocRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        if (localStorage.getItem("konee_pending_global") === "1") return;
-                        const data = docSnap.data();
-                        const loadedNotes = data.notes || [];
-                        setNotes(loadedNotes);
-                        
-                        let loadedDates = data.completedDates || [];
-                        if (loadedDates.length > 0 && typeof loadedDates[0] === 'string') {
-                            loadedDates = loadedDates.map(d => ({ date: d, type: '60' }));
+                const key = 'konee_local_global';
+                const unsubscribe = onSnapshot(cloudDoc('global_data'), snapshot => {
+                    if (!snapshot.exists()) {
+                        if (localRead(key)) {
+                            localStorage.setItem('konee_pending_global', '1');
+                            flushAllLocal(user);
                         }
-                        const normDates = normalizeDates(loadedDates);
-                        setCompletedDates(normDates);
-
-                        try {
-                            localStorage.setItem('konee_local_global', JSON.stringify({
-                                notes: loadedNotes,
-                                completedDates: normDates
-                            }));
-                        } catch (e) {}
-
-                        const today = getLocalToday();
-                        if (data.lastTimerDate && data.lastTimerDate !== today) {
-                             setTimeLeft(3600);
-                             setTimerEndTime(null);
-                             setIsActive(false);
-                             setSilverAwarded(false);
-                             setDoc(globalDocRef, { 
-                                 timerEndTime: null, 
-                                 savedTimeLeft: 3600, 
-                                 silverAwarded: false, 
-                                 lastTimerDate: today 
-                             }, { merge: true });
-                        } else {
-                             if (data.timerEndTime) {
-                                 const now = Date.now();
-                                 if (data.timerEndTime <= now) {
-                                     setTimeLeft(0);
-                                     setTimerEndTime(null);
-                                     setIsActive(false);
-                                 } else {
-                                     setTimerEndTime(data.timerEndTime);
-                                     setIsActive(true);
-                                 }
-                             } else {
-                                 setTimerEndTime(null);
-                                 setIsActive(false);
-                                 if (data.savedTimeLeft !== undefined) setTimeLeft(data.savedTimeLeft);
-                             }
-                             if (data.silverAwarded !== undefined) setSilverAwarded(data.silverAwarded);
-                        }
+                        return;
                     }
-                }, (error) => {
-                     console.error("Error syncing global data:", error);
-                });
-
-                if (localStorage.getItem("konee_pending_global") === "1") {
+                    const remote = snapshot.data();
+                    if (!shouldUseCloudCopy(key, remote)) return;
+                    const normalized = { ...remote, completedDates: normalizeDates(remote.completedDates || []) };
                     try {
-                        const saved = JSON.parse(localStorage.getItem("konee_local_global") || 'null');
-                        if (saved) setDoc(globalDocRef, saved, { merge: true })
-                            .then(() => localStorage.removeItem("konee_pending_global"))
-                            .catch(error => console.warn("Global cloud save pending:", error));
-                    } catch (e) { console.warn(e); }
-                }
+                        localStorage.setItem(key, JSON.stringify(normalized));
+                        setNotes(normalized.notes || []);
+                        setCompletedDates(normalized.completedDates);
+                        if (normalized.silverAwarded !== undefined) setSilverAwarded(normalized.silverAwarded);
+                        if (normalized.savedTimeLeft !== undefined && !normalized.timerEndTime) setTimeLeft(normalized.savedTimeLeft);
+                        window.dispatchEvent(new Event('konee-storage-updated'));
+                    } catch (error) { console.error('Global local restore failed:', error); setStorageFailure(true); }
+                }, error => console.warn('Global cloud read unavailable:', error));
+                flushAllLocal(user);
                 return () => unsubscribe();
             }, [user]);
 
-            // 로컬스토리지 + 파이어베이스 이중 저장 함수 (Day별 문장 & 반복 체크)
-            const saveDayData = async (newSentences, newRepCount, newTopic = topic) => {
-                try {
-                    localStorage.setItem(`konee_pending_day_${currentDay}`, "1");
-                    localStorage.setItem(`konee_local_day_${currentDay}`, JSON.stringify({
-                        sentences: newSentences,
-                        repetitionCount: newRepCount,
-                        topic: newTopic
-                    }));
-                } catch (e) {}
+            // 재접속, 네트워크 복구, 탭 복귀 때 모든 Day의 보류 기록을 재전송합니다.
+            useEffect(() => {
+                const update = () => {
+                    setSyncStatus(storageFailure ? '기기 저장 오류 · 백업 필요'
+                        : !user ? '기기에 저장됨 · 구글 로그인 필요'
+                        : hasLocalWork() ? '기기에 저장됨 · 클라우드 동기화 대기'
+                        : '클라우드 업로드 요청 완료 · 저장 기록 확인 권장');
+                };
+                const retry = () => { flushAllLocal(user); update(); };
+                const onFocus = () => retry();
+                const onVisibility = () => { if (!document.hidden) retry(); };
+                window.addEventListener('online', retry);
+                window.addEventListener('focus', onFocus);
+                window.addEventListener('konee-storage-updated', update);
+                document.addEventListener('visibilitychange', onVisibility);
+                const timer = window.setInterval(retry, 30000);
+                retry();
+                return () => {
+                    window.removeEventListener('online', retry);
+                    window.removeEventListener('focus', onFocus);
+                    window.removeEventListener('konee-storage-updated', update);
+                    document.removeEventListener('visibilitychange', onVisibility);
+                    clearInterval(timer);
+                };
+            }, [user, storageFailure]);
 
-                if (!user) return;
-                const dayDocRef = doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', `day_${currentDay}`);
-                await setDoc(dayDocRef, { sentences: newSentences, repetitionCount: newRepCount, topic: newTopic }, { merge: true });
-                localStorage.removeItem(`konee_pending_day_${currentDay}`);
+            const saveDayData = async (newSentences, newRepCount, newTopic = topic) => {
+                const key = `konee_local_day_${currentDay}`;
+                const ok = saveLocallyFirst(key, { sentences: newSentences, repetitionCount: newRepCount, topic: newTopic });
+                if (!ok) { setStorageFailure(true); return; }
+                if (user) flushOneLocal(key, user);
             };
 
-            // 로컬스토리지 + 파이어베이스 이중 저장 함수 (전체 노트 & 타이머 & 스탬프)
             const saveGlobalData = async (updates) => {
-                try {
-                    const prevRaw = localStorage.getItem('konee_local_global');
-                    const prevObj = prevRaw ? JSON.parse(prevRaw) : {};
-                    localStorage.setItem('konee_pending_global', '1');
-                    localStorage.setItem('konee_local_global', JSON.stringify({ ...prevObj, ...updates }));
-                } catch (e) {}
-
-                if (!user) return;
-                const globalDocRef = doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', 'global_data');
-                const today = getLocalToday();
-                await setDoc(globalDocRef, { ...updates, lastTimerDate: today }, { merge: true });
-                localStorage.removeItem("konee_pending_global");
+                const key = 'konee_local_global';
+                const previous = localRead(key) || {};
+                const ok = saveLocallyFirst(key, { ...previous, ...updates, lastTimerDate: getLocalToday() });
+                if (!ok) { setStorageFailure(true); return; }
+                if (user) flushOneLocal(key, user);
             };
 
             const triggerGoalAchieved = async (type) => {
@@ -753,23 +781,13 @@
                             const parsed = JSON.parse(localRaw);
                             if (parsed.sentences && parsed.sentences[globalItem.originalIndex]) {
                                 parsed.sentences[globalItem.originalIndex].highlight = false;
-                                localStorage.setItem(`konee_local_day_${globalItem.day}`, JSON.stringify(parsed));
+                                saveLocallyFirst(`konee_local_day_${globalItem.day}`, parsed);
+                                flushAllLocal(user);
                             }
                         }
                     } catch (e) {}
                     
-                    if (user) {
-                        const dayDocRef = doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', `day_${globalItem.day}`);
-                        const daySnap = await getDoc(dayDocRef);
-                        if (daySnap.exists()) {
-                            const data = daySnap.data();
-                            const newDaySentences = [...data.sentences];
-                            if (newDaySentences[globalItem.originalIndex]) {
-                                newDaySentences[globalItem.originalIndex].highlight = false;
-                                await setDoc(dayDocRef, { sentences: newDaySentences, repetitionCount: data.repetitionCount || 0, topic: data.topic || "" }, { merge: true });
-                            }
-                        }
-                    }
+
                 } else {
                     const newSentences = [...sentences];
                     newSentences[index] = { 
@@ -1048,6 +1066,114 @@
                 showToast('전체 학습 기록 백업 파일을 저장했어요.');
             };
 
+            // 백업은 기존 기록을 자동 삭제하지 않고, 사용자가 선택한 파일만 검증 후 병합합니다.
+            const restoreBackup = async (event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (!file) return;
+                try {
+                    const data = JSON.parse(await file.text());
+                    if (data.format !== 'konees-english-backup-v1' || !data.storage || typeof data.storage !== 'object') {
+                        throw new Error('이 사이트의 백업 파일이 아닙니다.');
+                    }
+                    const entries = Object.entries(data.storage).filter(([key, value]) =>
+                        (/^konee_local_day_\d+$/.test(key) || key === 'konee_local_global' || key === 'koneeLastVisitedDay') && typeof value === 'string');
+                    if (!entries.length) throw new Error('복원할 기록이 없습니다.');
+                    if (!window.confirm(`백업의 ${entries.length}개 항목을 기기 기록에 병합할까요? 기존 항목 중 더 최근에 저장한 데이터는 유지합니다.`)) return;
+                    for (const [key, raw] of entries) {
+                        if (key === 'koneeLastVisitedDay') {
+                            if (!localStorage.getItem(key)) localStorage.setItem(key, raw);
+                            continue;
+                        }
+                        const imported = JSON.parse(raw);
+                        if (!imported || typeof imported !== 'object' || Array.isArray(imported)) continue;
+                        const existing = localRead(key);
+                        // 타임스탬프가 없는 오래된 백업은 현재 기록이 없을 때만 복원.
+                        if (existing && Number(existing.updatedAt || 0) >= Number(imported.updatedAt || 0)) continue;
+                        saveLocallyFirst(key, imported);
+                    }
+                    flushAllLocal(user);
+                    alert('백업을 병합했습니다. 화면을 다시 불러와 복원된 기록을 확인해 주세요.');
+                    window.location.reload();
+                } catch (error) {
+                    console.error('Restore rejected:', error);
+                    alert(`복원하지 못했습니다: ${error.message}`);
+                }
+            };
+
+            // Web Push: 실제 발송은 GitHub Actions 예약 작업이 수행합니다.
+            // 앱이 꺼져도 알림을 받으려면 아이폰에서 홈 화면에 추가 후 이 버튼을 눌러야 합니다.
+            useEffect(() => {
+                if (!user) { setPushEnabled(false); return; }
+                if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                    setPushStatus('이 브라우저는 웹 푸시를 지원하지 않아요. 아이폰 홈 화면 앱에서 열어 주세요.');
+                    return;
+                }
+                let cancelled = false;
+                (async () => {
+                    try {
+                        const registration = await navigator.serviceWorker.register('./sw.js', {scope: './'});
+                        const subscription = await registration.pushManager.getSubscription();
+                        if (!cancelled) {
+                            setPushEnabled(!!subscription && Notification.permission === 'granted');
+                            setPushStatus(subscription && Notification.permission === 'granted' ? '이 기기에서 알림이 활성화되어 있어요. (서버 예약 발송 설정 필요)' : '알림을 켜면 매일 밤 9시 알림을 받을 수 있어요.');
+                        }
+                    } catch (e) {
+                        if (!cancelled) setPushStatus(`알림 준비 실패: ${e.message}`);
+                    }
+                })();
+                return () => { cancelled = true; };
+            }, [user]);
+
+            const enableDailyPush = async () => {
+                if (!user || pushBusy) return;
+                if (isIPhone && !isStandaloneApp()) {
+                    setPushStatus('아이폰 Safari 공유 → 홈 화면에 추가 후, 홈 화면의 앱을 실행해서 눌러 주세요.');
+                    return;
+                }
+                if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+                    setPushStatus('이 환경에서는 웹 푸시가 지원되지 않아요.');
+                    return;
+                }
+                setPushBusy(true);
+                try {
+                    // Request on direct user click (important for iOS).
+                    const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+                    if (permission !== 'granted') throw new Error('알림 권한이 거부되었어요. iPhone 설정 → 알림에서 앱 알림을 허용해 주세요.');
+                    const registration = await navigator.serviceWorker.register('./sw.js', {scope: './'});
+                    await navigator.serviceWorker.ready;
+                    let subscription = await registration.pushManager.getSubscription();
+                    if (!subscription) subscription = await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushKeyBytes(PUSH_PUBLIC_KEY)});
+                    await setDoc(doc(db, 'push_subscriptions', user.uid), {
+                        uid: user.uid,
+                        subscription: subscription.toJSON(),
+                        updatedAt: new Date().toISOString(),
+                        enabled: true
+                    });
+                    setPushEnabled(true);
+                    setPushStatus('이 기기에서 알림 수신 등록 완료! 서버의 밤 9시 발송 설정도 완료해야 실제 알림이 와요.');
+                } catch (error) {
+                    console.error('Push subscribe failed:', error);
+                    setPushStatus('알림 등록 실패: ' + (error.code ? error.code + ' / ' : '') + error.message);
+                } finally { setPushBusy(false); }
+            };
+
+            const disableDailyPush = async () => {
+                if (!user || pushBusy) return;
+                setPushBusy(true);
+                try {
+                    // Delete remote record before local unsubscribe; don't claim success on failure.
+                    await deleteDoc(doc(db, 'push_subscriptions', user.uid));
+                    const registration = await navigator.serviceWorker.getRegistration('./');
+                    const subscription = await registration?.pushManager.getSubscription();
+                    if (subscription) await subscription.unsubscribe();
+                    setPushEnabled(false);
+                    setPushStatus('이 기기의 밤 9시 알림을 해제했어요.');
+                } catch (error) {
+                    setPushStatus('알림 해제 실패: ' + (error.code ? error.code + ' / ' : '') + error.message);
+                } finally {setPushBusy(false);}
+            };
+
             // Day 1~100 검색 필터링
             const filteredDayList = Object.entries(dayScheduleData).filter(([dayNum, info]) => {
                 if (!daySearchQuery.trim()) return true;
@@ -1092,6 +1218,21 @@
                             </div>
                         )}
                     </div>
+
+                    {/* 아이폰 홈 화면 PWA용 알림 설정 (기존 학습 기록 저장 코드는 변경하지 않음) */}
+                    <section className="max-w-5xl mx-auto mb-3 rounded-2xl border border-violet-100 bg-white px-4 py-4 shadow-sm">
+                        <div className="flex flex-wrap justify-between gap-3 items-center">
+                            <div>
+                                <p className="font-bold text-slate-800">🔔 매일 밤 9시 영어 공부 알림</p>
+                                <p className="text-xs text-slate-500 mt-1">아이폰에서는 Safari → 공유 → 홈 화면에 추가 후 앱에서 설정해요.</p>
+                                <p className="text-xs text-violet-700 mt-1" role="status">{pushStatus}</p>
+                            </div>
+                            <button type="button" disabled={!user || pushBusy} onClick={pushEnabled ? disableDailyPush : enableDailyPush}
+                                className={`px-4 py-3 text-sm font-bold rounded-xl text-white disabled:opacity-50 ${pushEnabled ? 'bg-slate-600' : 'bg-violet-600'}`}>
+                                {pushBusy ? '설정 중...' : pushEnabled ? '알림 해제' : '밤 9시 알림 받기'}
+                            </button>
+                        </div>
+                    </section>
 
                     {/* Day 1~100 전체 패턴 & 타임라인 목록 모달 */}
                     {showDayListModal && (
@@ -1285,8 +1426,18 @@
                             </div>
 
                             <div className="flex items-center justify-between gap-3 bg-white rounded-2xl px-4 py-3 border border-slate-100 shadow-sm">
-                                <p className="text-xs text-slate-500 leading-relaxed">🛡️ 표현은 기기에 먼저 저장되며, 구글 로그인 및 Firestore 권한 설정이 완료되면 클라우드에도 저장됩니다. 정기적으로 백업해 주세요.</p>
-                                <button onClick={exportFullBackup} className="shrink-0 bg-purple-100 text-purple-800 rounded-xl px-3 py-2.5 text-xs font-extrabold active:scale-95">전체 백업</button>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold text-violet-700">🛡️ {syncStatus}</p>
+                                    <p className="text-[11px] text-slate-500 mt-1">기기에 먼저 저장하고 연결 시 업로드합니다. 정기적인 파일 백업을 권장해요.</p>
+                                </div>
+                                <div className="flex flex-wrap gap-2 shrink-0">
+                                    <button onClick={() => { flushAllLocal(user); showToast('미전송 기록 재전송을 시도합니다.'); }} className="bg-slate-100 text-slate-700 rounded-xl px-3 py-2.5 text-xs font-extrabold">다시 저장</button>
+                                    <button onClick={exportFullBackup} className="bg-purple-100 text-purple-800 rounded-xl px-3 py-2.5 text-xs font-extrabold">전체 백업</button>
+                                    <label className="cursor-pointer bg-slate-100 text-slate-700 rounded-xl px-3 py-2.5 text-xs font-extrabold">
+                                        백업 복원
+                                        <input type="file" accept="application/json,.json" onChange={restoreBackup} className="hidden" />
+                                    </label>
+                                </div>
                             </div>
 
                             {/* 패턴 문장 연습 & 노트 카드 */}

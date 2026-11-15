@@ -1,0 +1,35 @@
+Konee's English: 매일 밤 9시 Web Push 설정
+
+[중요] 이 ZIP만 GitHub에 업로드한다고 알림이 발송되지는 않습니다.
+
+1. 배포: 이 ZIP의 index.html, .nojekyll, sw.js, manifest.webmanifest,
+   icon-192.png, icon-512.png, send_push.cjs, .github/workflows/daily-push.yml 을
+   GitHub Dream-page/KoneeEnglish 저장소의 동일한 위치에 업로드하세요.
+   특히 .github/workflows/daily-push.yml은 폴더 경로 그대로 필요합니다.
+
+2. Firebase (konee-english): Firestore Database -> Rules에서
+   firestore_push_rules_snippet.txt의 match 블록을 현재 규칙 안에 추가하고 게시합니다.
+   기존 study_data 규칙을 삭제/변경하지 마세요.
+
+3. Firebase: 프로젝트 설정(톱니) -> Service accounts -> Generate new private key.
+   다운받은 JSON 파일 전체 내용을 복사합니다.
+   이 파일은 비밀이며 절대로 GitHub Code 저장소에 업로드하지 마세요.
+
+4. GitHub 저장소 Settings -> Secrets and variables -> Actions -> New repository secret에서:
+   FIREBASE_SERVICE_ACCOUNT = 위 서비스 계정 JSON 전체 내용
+   WEB_PUSH_PUBLIC_KEY = 별도로 제공된 VAPID 공개 키
+   WEB_PUSH_PRIVATE_KEY = 별도로 제공된 VAPID 비공개 키
+   TARGET_UID = Konee's English 홈페이지 로그인 후 표시되는 아빠 Firebase UID
+   (비밀 키 파일은 별도 제공되므로 ZIP에는 들어 있지 않습니다.)
+
+5. 아이폰 Safari에서 https://dream-page.github.io/KoneeEnglish/ 열기
+   공유 -> 홈 화면에 추가 -> 홈 화면 앱 실행 -> 아빠 구글 로그인
+   -> '밤 9시 알림 받기' 클릭 -> 알림 허용
+   팝업이 승인되고 Firestore push_subscriptions/{UID} 문서가 생겨야 합니다.
+
+6. 테스트: GitHub Actions -> Konee 9PM Web Push -> Run workflow를 누르세요.
+   바로 아이폰에 알림이 오는지 확인한 뒤, 예약 발송은 매일 12:00 UTC(21:00 KST)에 실행됩니다.
+   GitHub Actions 예약 실행은 지연될 수 있고 정확한 21:00 수신을 보장하지 않습니다.
+
+참고: GitHub 저장소가 60일 이상 활동이 없으면 scheduled workflow가 자동으로 비활성화될 수 있습니다.
+알림 구독 및 학습 기록 저장은 별개이며, 이 서비스 워커에는 캐시/데이터 삭제 기능이 없습니다.
