@@ -416,7 +416,9 @@
             const [activeTab, setActiveTab] = useState('challenge'); 
             const [viewDate, setViewDate] = useState(new Date());
 
-            const [timeLeft, setTimeLeft] = useState(3600);
+            const TIMER_SECONDS = 30 * 60;
+            const SILVER_SECONDS = 15 * 60;
+            const [timeLeft, setTimeLeft] = useState(TIMER_SECONDS);
             const [isActive, setIsActive] = useState(false);
             const [timerEndTime, setTimerEndTime] = useState(null); 
             
@@ -606,7 +608,7 @@
                         setNotes(normalized.notes || []);
                         setCompletedDates(normalized.completedDates);
                         if (normalized.silverAwarded !== undefined) setSilverAwarded(normalized.silverAwarded);
-                        if (normalized.savedTimeLeft !== undefined && !normalized.timerEndTime) setTimeLeft(normalized.savedTimeLeft);
+                        if (normalized.savedTimeLeft !== undefined && !normalized.timerEndTime) setTimeLeft(Math.max(0, Math.min(TIMER_SECONDS, Number(normalized.savedTimeLeft) || 0)));
                         window.dispatchEvent(new Event('konee-storage-updated'));
                     } catch (error) { console.error('Global local restore failed:', error); setStorageFailure(true); }
                 }, error => console.warn('Global cloud read unavailable:', error));
@@ -660,8 +662,8 @@
                 let loadedDates = [...completedDates];
                 const existingIndex = loadedDates.findIndex(r => r.date === today);
                 if (existingIndex !== -1) {
-                    if (type === '60') {
-                        loadedDates[existingIndex] = { date: today, type: '60' };
+                    if (type === '30gold' && !['30gold', '60'].includes(loadedDates[existingIndex].type)) {
+                        loadedDates[existingIndex] = { date: today, type: '30gold' };
                     }
                 } else {
                     loadedDates.push({ date: today, type: type });
@@ -669,7 +671,7 @@
                 setCompletedDates(loadedDates);
                 saveGlobalData({ completedDates: loadedDates });
 
-                if (type === '60') {
+                if (type === '30gold') {
                     setShowCelebration(true);
                     setTimeout(() => setShowCelebration(false), 5000);
                 }
@@ -682,17 +684,17 @@
                         const now = Date.now();
                         const diff = Math.ceil((timerEndTime - now) / 1000);
 
-                        if (diff <= 1800 && diff > 0 && !silverAwarded) {
+                        if (diff <= SILVER_SECONDS && diff > 0 && !silverAwarded) {
                             setSilverAwarded(true);
                             saveGlobalData({ silverAwarded: true });
-                            triggerGoalAchieved('30');
+                            triggerGoalAchieved('15');
                         }
                         if (diff <= 0) {
                             setTimeLeft(0);
                             setIsActive(false);
                             setTimerEndTime(null);
                             setSilverAwarded(true);
-                            triggerGoalAchieved('60');
+                            triggerGoalAchieved('30gold');
                             saveGlobalData({ timerEndTime: null, savedTimeLeft: 0, silverAwarded: true });
                         } else {
                             setTimeLeft(diff);
@@ -710,11 +712,11 @@
                     const now = getLocalToday();
                     if (now !== lastCheckedDate.current) {
                         lastCheckedDate.current = now;
-                        setTimeLeft(3600);
+                        setTimeLeft(TIMER_SECONDS);
                         setTimerEndTime(null);
                         setIsActive(false);
                         setSilverAwarded(false);
-                        saveGlobalData({ timerEndTime: null, savedTimeLeft: 3600, silverAwarded: false });
+                        saveGlobalData({ timerEndTime: null, savedTimeLeft: TIMER_SECONDS, silverAwarded: false });
                     }
                 }, 30000);
 
@@ -727,8 +729,8 @@
                     setTimerEndTime(null);
                     saveGlobalData({ timerEndTime: null, savedTimeLeft: timeLeft }); 
                 } else {
-                    const duration = timeLeft > 0 ? timeLeft : 3600; 
-                    const isNewStart = duration === 3600;
+                    const duration = timeLeft > 0 ? timeLeft : TIMER_SECONDS; 
+                    const isNewStart = duration === TIMER_SECONDS;
                     if (isNewStart) setSilverAwarded(false);
 
                     const newEndTime = Date.now() + duration * 1000;
@@ -744,9 +746,9 @@
             const handleResetTimer = () => {
                 setIsActive(false);
                 setTimerEndTime(null);
-                setTimeLeft(3600);
+                setTimeLeft(TIMER_SECONDS);
                 setSilverAwarded(false);
-                saveGlobalData({ timerEndTime: null, savedTimeLeft: 3600, silverAwarded: false });
+                saveGlobalData({ timerEndTime: null, savedTimeLeft: TIMER_SECONDS, silverAwarded: false });
             };
 
             const updateSentence = (index, field, value) => {
@@ -1348,7 +1350,7 @@
                             <div className="bg-white p-8 rounded-3xl shadow-2xl text-center border-4 border-[#B692F6] max-w-sm w-full">
                                 <Trophy className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
                                 <h2 className="text-2xl font-extrabold mb-2 text-[#7C3AED]">Goal Achieved!</h2>
-                                <p className="text-gray-600 text-sm">오늘 1시간 공부 달성! 도장이 찍혔어요 쾅! 🎉</p>
+                                <p className="text-gray-600 text-sm">오늘 30분 공부 달성! 도장이 찍혔어요 쾅! 🎉</p>
                             </div>
                         </div>
                     )}
@@ -1432,7 +1434,7 @@
                         </div>
 
                         {/* MAIN STUDY AREA (아이폰 모바일에서 학습 영역이 먼저 보이도록 order 설정) */}
-                        <div className="lg:col-span-8 order-1 lg:order-2 space-y-5">
+                        <div className="lg:col-span-8 order-2 lg:order-2 space-y-5">
                             
                             {/* YouTube에서 Day별 시작 시각 바로 열기 (임베드 플레이어 사용 안 함) */}
                             <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
@@ -2073,14 +2075,14 @@
                             </div>
                         </div>
 
-                        {/* SIDEBAR (Timer, Streak, Calendar - 모바일에서는 하단에 배치되어 학습 집중도 향상) */}
-                        <div className="lg:col-span-4 space-y-5 order-2 lg:order-1">
+                        {/* SIDEBAR: 타이머와 캘린더를 모바일에서도 학습 카드보다 먼저 배치 */}
+                        <div className="lg:col-span-4 space-y-5 order-1 lg:order-1">
                             {/* Timer */}
                             <div className="bg-white rounded-[2rem] p-5 sm:p-6 shadow-xl shadow-slate-200/60 border border-slate-100 relative overflow-hidden">
                                 <div className="absolute top-0 left-0 w-full h-1.5 bg-slate-100">
                                     <div 
                                         className="h-full bg-gradient-to-r from-[#C4B5FD] to-[#7C3AED] transition-all duration-1000 ease-linear"
-                                        style={{ width: `${Math.min(((3600 - timeLeft) / 3600) * 100, 100)}%` }}
+                                        style={{ width: `${Math.max(0, Math.min(((TIMER_SECONDS - timeLeft) / TIMER_SECONDS) * 100, 100))}%` }}
                                     />
                                 </div>
                                 <div className="flex justify-between items-center mb-4 mt-1">
@@ -2088,7 +2090,7 @@
                                         <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-red-400 animate-pulse' : 'bg-slate-300'}`}></div>
                                         Study Timer
                                     </h3>
-                                    <span className="text-xs font-bold text-[#7C3AED] bg-[#F3E8FF] px-3 py-1 rounded-full">60min Goal</span>
+                                    <span className="text-xs font-bold text-[#7C3AED] bg-[#F3E8FF] px-3 py-1 rounded-full">30min Goal</span>
                                 </div>
                                 <div className="text-center mb-6">
                                     <div className="text-6xl sm:text-7xl font-black text-slate-800 tracking-tighter tabular-nums">
@@ -2105,28 +2107,6 @@
                                     <button onClick={handleResetTimer} className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-colors active:scale-95">
                                         <RotateCcw size={20} />
                                     </button>
-                                </div>
-                            </div>
-
-                            {/* Streak Counter */}
-                            <div className="bg-gradient-to-br from-[#7C3AED] to-[#5B21B6] text-white rounded-[2rem] p-5 sm:p-6 shadow-xl relative overflow-hidden">
-                                <div className="absolute top-[-10px] right-[-10px] w-24 h-24 bg-yellow-400 rounded-full blur-[50px] opacity-30 pointer-events-none"></div>
-                                <div className="flex items-center justify-between relative z-10">
-                                    <div>
-                                        <p className="text-xs font-bold text-white/60 uppercase tracking-wider mb-1">Current Streak</p>
-                                        <div className="flex items-baseline gap-2">
-                                            <span className="text-4xl sm:text-5xl font-black">{streak.current}</span>
-                                            <span className="text-base font-bold text-white/80">일 연속</span>
-                                        </div>
-                                    </div>
-                                    <div className="text-5xl">{streak.current >= 7 ? '🔥' : streak.current >= 3 ? '✨' : '💪'}</div>
-                                </div>
-                                <div className="mt-4 pt-3.5 border-t border-white/10 flex justify-between items-center relative z-10">
-                                    <div className="flex items-center gap-2">
-                                        <Trophy size={14} className="text-yellow-300"/>
-                                        <span className="text-xs font-bold text-white/70">최장 기록</span>
-                                    </div>
-                                    <span className="text-sm font-black text-yellow-300">{streak.best}일</span>
                                 </div>
                             </div>
 
@@ -2169,7 +2149,7 @@
                                         let stampText = day;
                                         
                                         if (isCompleted) {
-                                            if (stampType === '30') {
+                                            if (stampType === '15' || stampType === '30') { // 이전 30분 은메달 기록도 은메달로 유지
                                                 stampStyle = 'bg-slate-200 border-slate-300 text-slate-600 scale-105';
                                                 stampText = "☆";
                                             } else {
@@ -2192,10 +2172,32 @@
                                     })}
                                 </div>
                                 <div className="mt-4 flex justify-center gap-4 text-[10px] text-white/50">
-                                    <div className="flex items-center gap-1"><span className="text-yellow-400">★</span> 60min</div>
-                                    <div className="flex items-center gap-1"><span className="text-slate-300">☆</span> 30min</div>
+                                    <div className="flex items-center gap-1"><span className="text-yellow-400">★</span> 30min</div>
+                                    <div className="flex items-center gap-1"><span className="text-slate-300">☆</span> 15min</div>
                                 </div>
                             </div>
+                            {/* Streak Counter */}
+                            <div className="bg-gradient-to-br from-[#7C3AED] to-[#5B21B6] text-white rounded-[2rem] p-5 sm:p-6 shadow-xl relative overflow-hidden">
+                                <div className="absolute top-[-10px] right-[-10px] w-24 h-24 bg-yellow-400 rounded-full blur-[50px] opacity-30 pointer-events-none"></div>
+                                <div className="flex items-center justify-between relative z-10">
+                                    <div>
+                                        <p className="text-xs font-bold text-white/60 uppercase tracking-wider mb-1">Current Streak</p>
+                                        <div className="flex items-baseline gap-2">
+                                            <span className="text-4xl sm:text-5xl font-black">{streak.current}</span>
+                                            <span className="text-base font-bold text-white/80">일 연속</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-5xl">{streak.current >= 7 ? '🔥' : streak.current >= 3 ? '✨' : '💪'}</div>
+                                </div>
+                                <div className="mt-4 pt-3.5 border-t border-white/10 flex justify-between items-center relative z-10">
+                                    <div className="flex items-center gap-2">
+                                        <Trophy size={14} className="text-yellow-300"/>
+                                        <span className="text-xs font-bold text-white/70">최장 기록</span>
+                                    </div>
+                                    <span className="text-sm font-black text-yellow-300">{streak.best}일</span>
+                                </div>
+                            </div>
+
                         </div>
                     </div>
                 </div>
