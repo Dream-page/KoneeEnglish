@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <!-- YouTube Error 153: 임베드 요청에서 사이트 출처를 전달하도록 설정 -->
+    <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>Konee's English</title>
     
@@ -260,14 +262,6 @@
             const [isEditingDay, setIsEditingDay] = useState(false);
             const [tempDay, setTempDay] = useState(currentDay); 
 
-            // 유튜브 플레이어 제어용 state (재생 시점 점프 및 강제 리로드 트리거)
-            const [videoStartSec, setVideoStartSec] = useState(() => {
-                const timeRange = dayScheduleData[currentDay]?.time || "00:10 ~ 05:52";
-                return parseTimeToSeconds(timeRange.split('~')[0]);
-            });
-            const [videoAutoplay, setVideoAutoplay] = useState(0);
-            const [videoReplayKey, setVideoReplayKey] = useState(0);
-            
             const [sentences, setSentences] = useState(() => {
                 try {
                     const localSaved = localStorage.getItem(`konee_local_day_${currentDay}`);
@@ -847,7 +841,7 @@
                 }
             };
 
-            // Day 변경 시 해당 유튜브 타임라인으로 자동 이동
+            // Day 변경 시 해당 유튜브 타임라인 표시 갱신
             const selectDay = (dayNum, autoStartVideo = true) => {
                 const clamped = Math.min(100, Math.max(1, dayNum));
                 setCurrentDay(clamped);
@@ -855,23 +849,6 @@
                 setShowDayListModal(false);
                 setShowHighlightedOnly(false);
 
-                const timeRange = dayScheduleData[clamped]?.time || "미제공";
-                const startSec = timeRange === "미제공" ? 0 : parseTimeToSeconds(timeRange.split('~')[0]);
-                setVideoStartSec(startSec);
-                if (autoStartVideo) {
-                    setVideoAutoplay(0); // iOS Safari는 사용자가 영상 내 ▶을 눌러 재생하는 방식이 가장 안정적입니다.
-                    setVideoReplayKey(prev => prev + 1);
-                }
-            };
-
-            const handleReplayFromDayStart = () => {
-                const timeRange = dayScheduleData[currentDay]?.time || "미제공";
-                if (timeRange === "미제공") { showToast("Day 100은 영상 시작 시각이 제공되지 않았어요."); return; }
-                const startSec = parseTimeToSeconds(timeRange.split('~')[0]);
-                setVideoStartSec(startSec);
-                setVideoAutoplay(0);
-                setVideoReplayKey(prev => prev + 1);
-                showToast(`Day ${currentDay} 시작 지점(${timeRange.split('~')[0].trim()})으로 이동!`);
             };
 
             const changeDay = (direction) => {
@@ -1081,7 +1058,7 @@
                         ) : (
                             <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
-                                    <p className="font-extrabold text-slate-800">아빠의 영어 공부 기록</p>
+                                    <p className="font-extrabold text-slate-800">코니의 영어공부기록</p>
                                     <p className="text-xs text-slate-500">구글 계정으로 로그인하면 학습 기록을 Firebase에도 저장해요.</p>
                                     {loginError && <p role="alert" className="text-xs text-rose-600 mt-1">{loginError}</p>}
                                 </div>
@@ -1259,47 +1236,27 @@
                         {/* MAIN STUDY AREA (아이폰 모바일에서 학습 영역이 먼저 보이도록 order 설정) */}
                         <div className="lg:col-span-8 order-1 lg:order-2 space-y-5">
                             
-                            {/* 유튜브 타임라인 연동 비디오 플레이어 카드 */}
-                            <div className="bg-white rounded-[2rem] p-3.5 sm:p-5 shadow-xl shadow-slate-200/50 border border-slate-100">
-                                <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
-                                    <div className="flex items-center gap-2">
-                                        <span className="inline-flex items-center gap-1 bg-rose-50 text-rose-600 px-2.5 py-1 rounded-xl text-xs font-extrabold">
-                                            <Youtube size={15} /> Day {currentDay} 강의 구간
+                            {/* YouTube에서 Day별 시작 시각 바로 열기 (임베드 플레이어 사용 안 함) */}
+                            <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-100">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div className="flex flex-col gap-1.5">
+                                        <span className="inline-flex items-center gap-1.5 text-sm font-extrabold text-slate-800">
+                                            <Youtube size={17} className="text-rose-600" /> Day {currentDay} 영상 학습
                                         </span>
-                                        <span className="text-xs sm:text-sm font-black text-slate-700 bg-slate-100 px-2.5 py-1 rounded-xl">
-                                            ⏱ {currentTimeline}
+                                        <span className="text-xs sm:text-sm font-semibold text-slate-500">
+                                            ⏱ {currentTimeline === "미제공" ? "영상 시작 시각 미제공" : currentTimeline}
                                         </span>
                                     </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <button
-                                            onClick={handleReplayFromDayStart}
-                                            disabled={currentTimeline === "미제공"}
-                                            className="inline-flex items-center gap-1 bg-[#7C3AED] text-white px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-[#6D28D9] active:scale-95 transition-all shadow-sm"
-                                        >
-                                            <Play size={12} fill="currentColor" />
-                                            <span>{currentTimeline === "미제공" ? "영상 처음부터 재생" : `${currentStartTimeStr}부터 재생`}</span>
-                                        </button>
-                                        <a
-                                            href={`https://www.youtube.com/watch?v=${YOUTUBE_VIDEO_ID}&t=${videoStartSec}s`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="p-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl transition-colors"
-                                            title="유튜브 앱으로 열기"
-                                        >
-                                            <ExternalLink size={15} />
-                                        </a>
-                                    </div>
-                                </div>
-                                
-                                <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-slate-900 shadow-inner">
-                                    <iframe
-                                        key={`${currentDay}-${videoReplayKey}`}
-                                        className="w-full h-full"
-                                        src={`https://www.youtube-nocookie.com/embed/${YOUTUBE_VIDEO_ID}?start=${videoStartSec}&autoplay=${videoAutoplay}&rel=0&playsinline=1`}
-                                        title={`Konee's English Day ${currentDay}`}
-                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                        allowFullScreen
-                                    ></iframe>
+                                    <a
+                                        href={`https://www.youtube.com/watch?v=${YOUTUBE_VIDEO_ID}&t=${parseTimeToSeconds(currentStartTimeStr)}s`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center justify-center gap-2 bg-[#7C3AED] text-white px-4 py-3 rounded-xl text-sm font-extrabold hover:bg-[#6D28D9] active:scale-95 transition-all shadow-sm"
+                                        aria-label={`Day ${currentDay} 영상을 ${currentStartTimeStr}부터 유튜브에서 보기`}
+                                    >
+                                        <Play size={15} fill="currentColor" />
+                                        {currentTimeline === "미제공" ? "유튜브 영상 보기" : `${currentStartTimeStr}부터 학습하기`}
+                                    </a>
                                 </div>
                             </div>
 
@@ -1503,177 +1460,6 @@
                                                 </div>
 
                                                 {/* 포도알 Repetition Check */}
-                                                <div className="bg-white/80 backdrop-blur-sm p-3.5 rounded-xl border border-purple-100">
-                                                    <div className="flex justify-between items-center mb-2.5">
-                                                        <span className="text-xs font-extrabold text-[#5B21B6] flex items-center gap-1.5">
-                                                            <span>🍇</span> Repetition Check
-                                                        </span>
-                                                        <span className="text-xs font-extrabold bg-[#F5F3FF] text-[#7C3AED] px-2.5 py-0.5 rounded-full">
-                                                            {repetitionCount} / 10 Sets
-                                                        </span>
-                                                    </div>
-                                                    <div className="grid grid-cols-10 gap-1 sm:gap-2">
-                                                        {[...Array(10)].map((_, i) => (
-                                                            <button 
-                                                                key={i}
-                                                                type="button"
-                                                                onClick={() => toggleRepetition(i)}
-                                                                className={`
-                                                                    aspect-square w-full rounded-full border-2 transition-all duration-200 flex items-center justify-center active:scale-90
-                                                                    ${i < repetitionCount 
-                                                                        ? 'bg-purple-100 border-[#7C3AED] shadow-sm' 
-                                                                        : 'bg-white border-[#C4B5FD] border-dashed'
-                                                                    }
-                                                                `}
-                                                            >
-                                                                {i < repetitionCount ? <span className="text-sm sm:text-xl leading-none">🍇</span> : <span className="text-[10px] font-bold text-purple-300">{i+1}</span>}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* 10문장 입력 및 학습 카드 리스트 */}
-                                            <div className="space-y-4 sm:space-y-5">
-                                                {sentences.map((item, idx) => (
-                                                    <div key={idx} className={`group relative bg-white border rounded-2xl p-3.5 sm:p-4 transition-all duration-300 ${hideEnglish ? 'border-[#7C3AED] shadow-md shadow-purple-100' : 'border-slate-200/80 hover:border-[#C4B5FD]'}`}>
-                                                        <div className={`absolute -left-2 -top-2.5 w-7 h-7 rounded-full flex items-center justify-center font-extrabold text-xs shadow-md transition-colors ${hideEnglish ? 'bg-[#7C3AED] text-white' : 'bg-slate-800 text-white'}`}>
-                                                            {idx + 1}
-                                                        </div>
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1">
-                                                            <div className="relative flex flex-col">
-                                                                <div className="flex justify-between items-center mb-1 pl-4 md:pl-0">
-                                                                    <label className={`text-[11px] font-bold uppercase tracking-wider ${hideEnglish ? 'text-[#7C3AED]' : 'text-slate-400'}`}>
-                                                                        {idx === 0 ? "Core Pattern (영어)" : "English"}
-                                                                    </label>
-                                                                    <div className="flex items-center gap-1">
-                                                                        <button 
-                                                                            onClick={() => speakText(item.eng)}
-                                                                            className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-[#7C3AED] active:scale-90 transition-colors"
-                                                                            title="듣기"
-                                                                        >
-                                                                            <Volume2 size={16} />
-                                                                        </button>
-                                                                        <button 
-                                                                            onClick={() => toggleHighlight(idx)}
-                                                                            className={`p-1.5 rounded-full hover:bg-slate-100 active:scale-90 transition-colors ${item.highlight ? 'text-yellow-600 bg-yellow-100' : 'text-slate-300'}`}
-                                                                            title="어려운 문장 하이라이트"
-                                                                        >
-                                                                            <Highlighter size={14} />
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                                
-                                                                <div 
-                                                                    onClick={() => toggleReveal(idx)} 
-                                                                    className={`relative flex-1 rounded-xl overflow-hidden transition-all duration-300 cursor-pointer 
-                                                                        ${hideEnglish && !revealedIndices.includes(idx) ? 'bg-slate-900' : (item.highlight ? 'bg-yellow-50' : 'bg-slate-50')}
-                                                                    `}
-                                                                >
-                                                                    <textarea 
-                                                                        value={item.eng} 
-                                                                        onChange={(e) => updateSentence(idx, 'eng', e.target.value)} 
-                                                                        placeholder={`예문 ${idx + 1} (영어)`} 
-                                                                        className={`w-full h-full bg-transparent border-none text-slate-800 font-bold text-base p-3 focus:ring-0 outline-none resize-none transition-all duration-300 leading-snug
-                                                                            ${hideEnglish && !revealedIndices.includes(idx) ? 'opacity-0 pointer-events-none' : 'opacity-100'}
-                                                                        `} 
-                                                                        rows={2} 
-                                                                        disabled={hideEnglish && !revealedIndices.includes(idx)} 
-                                                                    />
-                                                                    {hideEnglish && !revealedIndices.includes(idx) && (
-                                                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                                                            <span className="text-3xl">🙈</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex flex-col">
-                                                                <label className="text-[11px] font-bold text-slate-400 mb-1 uppercase tracking-wider">Meaning (한국어)</label>
-                                                                <div className="bg-slate-50 rounded-xl p-3 flex-1">
-                                                                    <textarea 
-                                                                        value={item.kor} 
-                                                                        onChange={(e) => updateSentence(idx, 'kor', e.target.value)} 
-                                                                        placeholder="한국어 뜻 / 내가 만든 예문 해석" 
-                                                                        className="w-full h-full bg-transparent border-none text-slate-700 text-sm sm:text-base focus:ring-0 outline-none resize-none font-medium leading-snug" 
-                                                                        rows={2}
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </>
-                                    )
-                                ) : (
-                                    /* Inspo Notes (저장한 표현) 탭 */
-                                    <>
-                                            {/* 오늘의 패턴 & 포도알 반복 체크 카드 */}
-                                            <div className="mb-6 p-4 sm:p-6 bg-gradient-to-br from-[#F5F3FF] to-[#EDE9FE]/60 rounded-2xl border border-[#DDD6FE]">
-                                                <div className="text-center relative group mb-5">
-                                                    <div className="inline-flex items-center gap-1.5 bg-white px-3.5 py-1 rounded-full border border-purple-200/80 shadow-sm mb-2">
-                                                        <span className="text-[11px] font-extrabold text-[#7C3AED] uppercase tracking-wider">Day {currentDay} Pattern</span>
-                                                        <button 
-                                                            onClick={() => speakText(topic.split('(')[0])}
-                                                            className="text-[#7C3AED] hover:text-[#5B21B6] p-0.5 active:scale-90"
-                                                            title="패턴 발음 듣기"
-                                                        >
-                                                            <Volume2 size={14} />
-                                                        </button>
-                                                    </div>
-                                                    
-                                                    <div className="flex items-center justify-center gap-2">
-                                                        {isEditingTopic ? (
-                                                            <div className="flex items-center gap-2 w-full justify-center">
-                                                                <input 
-                                                                    type="text"
-                                                                    value={tempTopic}
-                                                                    onChange={(e) => setTempTopic(e.target.value)}
-                                                                    className="text-base sm:text-xl font-extrabold text-slate-800 bg-white px-3 py-1 rounded-xl border-2 border-purple-400 focus:outline-none text-center flex-1 max-w-md"
-                                                                    autoFocus
-                                                                    onKeyDown={(e) => {
-                                                                        if(e.key === 'Enter') {
-                                                                            setTopic(tempTopic);
-                                                                            saveDayData(sentences, repetitionCount, tempTopic);
-                                                                            setIsEditingTopic(false);
-                                                                        }
-                                                                    }}
-                                                                />
-                                                                <button 
-                                                                    onClick={() => { 
-                                                                        setTopic(tempTopic); 
-                                                                        saveDayData(sentences, repetitionCount, tempTopic); 
-                                                                        setIsEditingTopic(false); 
-                                                                    }} 
-                                                                    className="text-green-600 bg-white p-2 rounded-xl shadow-sm"
-                                                                >
-                                                                    <Check size={18}/>
-                                                                </button>
-                                                                <button 
-                                                                    onClick={() => setIsEditingTopic(false)} 
-                                                                    className="text-red-500 bg-white p-2 rounded-xl shadow-sm"
-                                                                >
-                                                                    <X size={18}/>
-                                                                </button>
-                                                            </div>
-                                                        ) : (
-                                                            <h2 
-                                                                className="text-lg sm:text-2xl font-black text-slate-800 break-keep cursor-pointer hover:text-[#7C3AED] transition-colors flex items-center justify-center gap-1.5 leading-snug"
-                                                                onClick={() => { setTempTopic(topic); setIsEditingTopic(true); }}
-                                                                title="클릭하여 주제 수정"
-                                                            >
-                                                                <span>{topic}</span>
-                                                                <Edit2 size={14} className="text-slate-400 shrink-0" />
-                                                            </h2>
-                                                        )}
-                                                    </div>
-
-                                                    <p className="text-xs text-[#6D28D9] mt-1.5 font-medium">
-                                                        패턴을 활용해 나만의 응용 문장 10개를 만들고 소리 내어 연습하세요!
-                                                    </p>
-                                                </div>
-
-                                                {/* 포도알 Repetition Check (아이폰 화면 폭에 딱 맞게 10개 배치) */}
                                                 <div className="bg-white/80 backdrop-blur-sm p-3.5 rounded-xl border border-purple-100">
                                                     <div className="flex justify-between items-center mb-2.5">
                                                         <span className="text-xs font-extrabold text-[#5B21B6] flex items-center gap-1.5">
