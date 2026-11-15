@@ -6,6 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <!-- YouTube Error 153: 임베드 요청에서 사이트 출처를 전달하도록 설정 -->
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -1193,46 +1194,78 @@
                         </div>
                     )}
 
-                    {/* 구글 로그인 및 계정 확인: Firestore 규칙은 아래 UID와 일치하는 계정만 허용해야 합니다. */}
-                    <div className="max-w-5xl mx-auto mb-3 bg-white rounded-2xl border border-violet-100 px-4 py-3 shadow-sm">
-                        {!authReady ? (
-                            <p className="text-sm font-semibold text-slate-500">로그인 상태 확인 중...</p>
-                        ) : user ? (
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                    <p className="text-sm font-bold text-violet-800">✓ 구글 로그인: {user.displayName || user.email || '로그인 완료'}</p>
-                                    <p className="text-[11px] break-all text-slate-500">Firebase UID (보안 규칙에 입력): {user.uid}</p>
-                                </div>
-                                <button onClick={logoutGoogle} className="text-xs font-bold bg-slate-100 px-3 py-2 rounded-xl">로그아웃</button>
+                    {/* 상단 설정 바: 로그인/알림 영역은 작게 접어두고 필요할 때만 펼칩니다. */}
+                    <details className="max-w-5xl mx-auto mb-3 bg-white rounded-2xl border border-violet-100 px-4 py-3 shadow-sm group">
+                        <summary className="list-none cursor-pointer flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold ${user ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                                    {authReady ? (user ? '✓ 로그인됨' : '로그인 필요') : '로그인 확인 중...'}
+                                </span>
+                                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold ${pushEnabled ? 'bg-violet-50 text-violet-700' : 'bg-slate-100 text-slate-600'}`}>
+                                    {pushEnabled ? '🔔 9시 알림 켜짐' : '🔕 9시 알림 꺼짐'}
+                                </span>
+                                <p className="text-[11px] text-slate-500 truncate">설정이 끝났다면 평소에는 이 줄만 보고 사용해도 돼요.</p>
                             </div>
-                        ) : (
-                            <div className="flex flex-wrap items-center justify-between gap-3">
+                            <span className="text-xs font-bold text-violet-700">계정·알림 설정 보기</span>
+                        </summary>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2 border-t border-slate-100 pt-3">
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                                {!authReady ? (
+                                    <p className="text-sm font-semibold text-slate-500">로그인 상태 확인 중...</p>
+                                ) : user ? (
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-bold text-violet-800">✓ 구글 로그인: {user.displayName || user.email || '로그인 완료'}</p>
+                                            <p className="text-[11px] break-all text-slate-500">Firebase UID: {user.uid}</p>
+                                        </div>
+                                        <button onClick={logoutGoogle} className="text-xs font-bold bg-white border border-slate-200 px-3 py-2 rounded-xl">로그아웃</button>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p className="font-extrabold text-slate-800 text-sm">코니의 영어공부기록</p>
+                                            <p className="text-xs text-slate-500">구글 계정으로 로그인하면 학습 기록을 Firebase에도 저장해요.</p>
+                                            {loginError && <p role="alert" className="text-xs text-rose-600 mt-1">{loginError}</p>}
+                                        </div>
+                                        <button onClick={loginWithGoogle} disabled={loginBusy} className="bg-violet-600 text-white rounded-xl px-4 py-2.5 font-extrabold text-sm disabled:opacity-50">
+                                            {loginBusy ? '로그인 중...' : 'Google 로그인'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                                 <div>
-                                    <p className="font-extrabold text-slate-800">코니의 영어공부기록</p>
-                                    <p className="text-xs text-slate-500">구글 계정으로 로그인하면 학습 기록을 Firebase에도 저장해요.</p>
-                                    {loginError && <p role="alert" className="text-xs text-rose-600 mt-1">{loginError}</p>}
+                                    <p className="font-bold text-slate-800 text-sm">🔔 매일 밤 9시 영어 공부 알림</p>
+                                    <p className="text-xs text-slate-500 mt-1">아이폰 홈 화면에 추가한 뒤 앱에서 설정해요.</p>
+                                    <p className="text-xs text-violet-700 mt-1" role="status">{pushStatus}</p>
                                 </div>
-                                <button onClick={loginWithGoogle} disabled={loginBusy} className="bg-violet-600 text-white rounded-xl px-4 py-3 font-extrabold text-sm disabled:opacity-50">
-                                    {loginBusy ? '로그인 중...' : 'Google 계정으로 로그인'}
+                                <button type="button" disabled={!user || pushBusy} onClick={pushEnabled ? disableDailyPush : enableDailyPush}
+                                    className={`px-4 py-2.5 text-sm font-bold rounded-xl text-white disabled:opacity-50 ${pushEnabled ? 'bg-slate-600' : 'bg-violet-600'}`}>
+                                    {pushBusy ? '설정 중...' : pushEnabled ? '알림 해제' : '알림 켜기'}
                                 </button>
                             </div>
-                        )}
-                    </div>
-
-                    {/* 아이폰 홈 화면 PWA용 알림 설정 (기존 학습 기록 저장 코드는 변경하지 않음) */}
-                    <section className="max-w-5xl mx-auto mb-3 rounded-2xl border border-violet-100 bg-white px-4 py-4 shadow-sm">
-                        <div className="flex flex-wrap justify-between gap-3 items-center">
-                            <div>
-                                <p className="font-bold text-slate-800">🔔 매일 밤 9시 영어 공부 알림</p>
-                                <p className="text-xs text-slate-500 mt-1">아이폰에서는 Safari → 공유 → 홈 화면에 추가 후 앱에서 설정해요.</p>
-                                <p className="text-xs text-violet-700 mt-1" role="status">{pushStatus}</p>
-                            </div>
-                            <button type="button" disabled={!user || pushBusy} onClick={pushEnabled ? disableDailyPush : enableDailyPush}
-                                className={`px-4 py-3 text-sm font-bold rounded-xl text-white disabled:opacity-50 ${pushEnabled ? 'bg-slate-600' : 'bg-violet-600'}`}>
-                                {pushBusy ? '설정 중...' : pushEnabled ? '알림 해제' : '밤 9시 알림 받기'}
-                            </button>
                         </div>
-                    </section>
+                        {/* 클라우드 저장 및 전체 백업 기능: 학습 화면이 아닌 설정 메뉴 내부에서만 표시 */}
+                        <div className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 border border-slate-100">
+                            <p className="text-sm font-extrabold text-slate-800">🛡️ 클라우드 저장 · 백업 관리</p>
+                            <p className={`text-xs font-bold mt-1 ${storageFailure ? 'text-rose-700' : 'text-violet-700'}`} role="status">{syncStatus}</p>
+                            <p className="text-[11px] text-slate-500 mt-1">기기에 먼저 저장하고 연결되면 Firebase로 업로드해요. 중요한 기록은 정기적으로 파일 백업해 주세요.</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                <button onClick={() => { flushAllLocal(user); showToast('미전송 기록 재전송을 시도합니다.'); }} className="bg-white border border-slate-200 text-slate-700 rounded-xl px-3 py-2.5 text-xs font-extrabold">다시 저장</button>
+                                <button onClick={exportFullBackup} className="bg-purple-100 text-purple-800 rounded-xl px-3 py-2.5 text-xs font-extrabold">전체 백업</button>
+                                <label className="cursor-pointer bg-white border border-slate-200 text-slate-700 rounded-xl px-3 py-2.5 text-xs font-extrabold">
+                                    백업 복원
+                                    <input type="file" accept="application/json,.json" onChange={restoreBackup} className="hidden" />
+                                </label>
+                            </div>
+                        </div>
+                    </details>
+
+                    {storageFailure && (
+                        <div role="alert" className="max-w-5xl mx-auto mb-3 rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700 font-bold">
+                            기기 저장 오류가 감지됐어요. 새로고침하지 말고 상단 ‘계정·알림 설정 보기’에서 전체 백업을 시도해 주세요.
+                        </div>
+                    )}
 
                     {/* Day 1~100 전체 패턴 & 타임라인 목록 모달 */}
                     {showDayListModal && (
@@ -1422,21 +1455,6 @@
                                         <Play size={15} fill="currentColor" />
                                         {currentTimeline === "미제공" ? "유튜브 영상 보기" : `${currentStartTimeStr}부터 학습하기`}
                                     </a>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-3 bg-white rounded-2xl px-4 py-3 border border-slate-100 shadow-sm">
-                                <div className="min-w-0 flex-1">
-                                    <p className="text-xs font-bold text-violet-700">🛡️ {syncStatus}</p>
-                                    <p className="text-[11px] text-slate-500 mt-1">기기에 먼저 저장하고 연결 시 업로드합니다. 정기적인 파일 백업을 권장해요.</p>
-                                </div>
-                                <div className="flex flex-wrap gap-2 shrink-0">
-                                    <button onClick={() => { flushAllLocal(user); showToast('미전송 기록 재전송을 시도합니다.'); }} className="bg-slate-100 text-slate-700 rounded-xl px-3 py-2.5 text-xs font-extrabold">다시 저장</button>
-                                    <button onClick={exportFullBackup} className="bg-purple-100 text-purple-800 rounded-xl px-3 py-2.5 text-xs font-extrabold">전체 백업</button>
-                                    <label className="cursor-pointer bg-slate-100 text-slate-700 rounded-xl px-3 py-2.5 text-xs font-extrabold">
-                                        백업 복원
-                                        <input type="file" accept="application/json,.json" onChange={restoreBackup} className="hidden" />
-                                    </label>
                                 </div>
                             </div>
 
