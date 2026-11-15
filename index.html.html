@@ -1,0 +1,2232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Konee's English</title>
+    
+    <!-- 1. Tailwind CSS 불러오기 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. 리액트 및 아이콘, 파이어베이스를 불러오기 위한 지도(Import Map) 설정 -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.263.1",
+            "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+            "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"
+        }
+    }
+    </script>
+
+    <!-- 3. 브라우저에서 JSX를 해석하게 해주는 Babel -->
+    <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+    
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        /* 모바일 iOS 입력창 줌인 방지 및 부드러운 스크롤 */
+        input, textarea {
+            font-size: 16px !important;
+        }
+        @media (min-width: 768px) {
+            input, textarea {
+                font-size: inherit !important;
+            }
+        }
+        /* 스크롤바 숨김 유틸리티 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-[#F3F4F6] text-slate-800 antialiased overflow-x-hidden">
+    <div id="root"></div>
+
+    <!-- 4. 메인 React 코드 -->
+    <script type="text/babel" data-type="module" data-presets="react">
+        import React, { useState, useEffect, useCallback } from 'react';
+        import ReactDOM from 'react-dom/client';
+        import { Play, Pause, RotateCcw, Plus, Trash2, Edit2, Eye, EyeOff, Trophy, Sparkles, BookOpen, Calendar as CalendarIcon, RefreshCw, ChevronLeft, ChevronRight, Check, Highlighter, StickyNote, Volume2, X, List, Youtube, ExternalLink, Clock } from 'lucide-react';
+        import { initializeApp } from 'firebase/app';
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'firebase/auth';
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, getDocs } from 'firebase/firestore';
+
+        // --- Firebase Configuration ---
+        // 아빠 전용 Firebase 프로젝트. 기존 self-improvement 프로젝트와 완전히 분리합니다.
+        const firebaseConfig = {
+            apiKey: "AIzaSyB1CaELRFSb2f30M3UmePTW_POLWK2WiP4",
+            authDomain: "konee-english.firebaseapp.com",
+            projectId: "konee-english",
+            storageBucket: "konee-english.firebasestorage.app",
+            messagingSenderId: "195025963215",
+            appId: "1:195025963215:web:5ee6d6a2d044b34e034fba",
+            measurementId: "G-EMTY3LJQ1H"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = 'konees-english-100';
+        // 한 분 전용 고정 프로필 키 (동기화 코드 입력 불필요)
+        const SINGLE_USER_DOC_KEY = 'konee_dad_single_profile';
+        const YOUTUBE_VIDEO_ID = 'aSKKfo7oEKU';
+
+        // 타임라인 문자열("1:01:41" 또는 "06:14")을 초(seconds)로 변환
+        const parseTimeToSeconds = (timeStr) => {
+            if (!timeStr) return 0;
+            const parts = timeStr.trim().split(':').map(Number);
+            if (parts.length === 3) {
+                return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            } else if (parts.length === 2) {
+                return parts[0] * 60 + parts[1];
+            }
+            return 0;
+        };
+
+        // 날짜 형식 정규화 함수
+        const normalizeDates = (datesArray) => {
+            if (!Array.isArray(datesArray)) return [];
+            return datesArray.map(d => {
+                if (typeof d === 'string') return { date: d, type: '60' };
+                if (d && typeof d === 'object') {
+                    if (d.date && typeof d.date === 'object' && d.date.date) {
+                        return { date: d.date.date, type: d.type || '60' };
+                    }
+                    if (typeof d.date === 'string') {
+                        return d;
+                    }
+                }
+                return null;
+            }).filter(Boolean);
+        };
+
+        const getLocalToday = () => {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        };
+
+        // --- Day 1 ~ 100 패턴영어 주제 및 유튜브 타임라인 매핑 ---
+        const dayScheduleData = {
+            1: { title: "I’m used to~ (나는 무엇에 익숙해)", time: "00:10 ~ 05:52" },
+            2: { title: "I’m afraid ~ ((유감이지만) ~인 것 같아)", time: "06:14 ~ 11:04" },
+            3: { title: "I’m sure ~ (~라고 확신해)", time: "11:19 ~ 19:33" },
+            4: { title: "I’m not sure ~ (~인지 확실치 않아)", time: "19:55 ~ 26:38" },
+            5: { title: "I’m saying~ (~라고 말하는거야)", time: "27:00 ~ 33:38" },
+            6: { title: "Are you sure~? (~인게 확실해?)", time: "33:44 ~ 38:29" },
+            7: { title: "I’m not saying~ (~라고 말하는게 아니야)", time: "38:48 ~ 45:18" },
+            8: { title: "I’m talking about~ (~에 대해 얘기하고 있어)", time: "45:19 ~ 52:15" },
+            9: { title: "Are you talking about~ (~에 대해 얘기하는거야?)", time: "52:58 ~ 57:19" },
+            10: { title: "Are you planning to~? (~할 계획이야?)", time: "57:20 ~ 1:01:37" },
+            11: { title: "I was no longer~ (더 이상 ~가 아니었어)", time: "1:01:41 ~ 1:07:21" },
+            12: { title: "I was asked to~ (~해달라고 부탁받았어)", time: "1:07:22 ~ 1:13:03" },
+            13: { title: "I was supposed to ~ (~했어야 했는데)", time: "1:13:05 ~ 1:21:31" },
+            14: { title: "I wasn’t supposed to~ (~하면 안되는 거였는데)", time: "1:21:32 ~ 1:29:06" },
+            15: { title: "I was thinking about~ (~할까 생각했었어)", time: "1:29:08 ~ 1:36:59" },
+            16: { title: "I wish I were~ (~라면 좋을텐데)", time: "1:37:00 ~ 1:42:28" },
+            17: { title: "It’s important to~ (~하는 것은 중요해)", time: "1:42:29 ~ 1:48:16" },
+            18: { title: "It’s about how~ (어떻게(얼마나) 하는지가 중요해)", time: "1:48:17 ~ 1:54:29" },
+            19: { title: "It was too late to~ (~하기에는 너무 늦었어)", time: "1:54:30 ~ 1:59:25" },
+            20: { title: "It’s possible (~할 가능성이 있어)", time: "1:59:35 ~ 2:06:43" },
+            21: { title: "That’s because (그것은 ~하기 때문이야)", time: "2:06:52 ~ 2:12:11" },
+            22: { title: "This is first (이번(이것)이 처음이야)", time: "2:12:21 ~ 2:19:13" },
+            23: { title: "This is one of (이것은 ~중에 하나야)", time: "2:19:28 ~ 2:26:18" },
+            24: { title: "There’s been (~이 있었어)", time: "2:26:34 ~ 2:32:42" },
+            25: { title: "There’s no need to~ (~할 필요가 없어)", time: "2:32:56 ~ 2:38:54" },
+            26: { title: "There’s no reason to~ (~할 이유가 없어)", time: "2:39:05 ~ 2:44:38" },
+            27: { title: "There was no way to~ (~할 방법이 없었어)", time: "2:44:50 ~ 2:50:16" },
+            28: { title: "There’s something~ (~할 뭔가가 있어)", time: "2:50:27 ~ 2:57:39" },
+            29: { title: "I’ve seen~ (~를 봤어)", time: "2:57:50 ~ 3:03:05" },
+            30: { title: "I haven’t seen (~를 못 봤어)", time: "3:03:17 ~ 3:09:06" },
+            31: { title: "I’ve come to~ (~하러 왔어)", time: "3:09:16 ~ 3:13:43" },
+            32: { title: "I’ve decided to~ (~하기로 결심했어)", time: "3:13:55 ~ 3:19:27" },
+            33: { title: "You’d better~ (~하는게 좋을거야)", time: "3:19:39 ~ 3:24:22" },
+            34: { title: "You’d better not~ (~하지 않는게 좋을거야)", time: "3:24:33 ~ 3:29:54" },
+            35: { title: "I had no idea~ (~인지 전혀 몰랐어)", time: "3:30:05 ~ 3:37:27" },
+            36: { title: "It has nothing to do with~ (~과는 상관없어)", time: "3:44:09 ~ 3:50:12" },
+            37: { title: "Let me know~ (~을 알려줘)", time: "3:50:23 ~ 3:56:06" },
+            38: { title: "Let me see ~ (~을 확인해볼게)", time: "3:56:17 ~ 4:01:48" },
+            39: { title: "Let me tell you~ (~을 너에게 말해줄게)", time: "4:01:57 ~ 4:06:59" },
+            40: { title: "I’ll let you know~ (~을 너에게 알려줄게)", time: "4:07:10 ~ 4:12:42" },
+            41: { title: "I want you to~ (네가 ~하는 것을 원해)", time: "4:12:54 ~ 4:18:09" },
+            42: { title: "I don’t want you to~ (네가 ~하는 것을 원치 않아)", time: "4:18:21 ~ 4:23:48" },
+            43: { title: "Do you want me to~ (내가 ~하길 원해?)", time: "4:23:59 ~ 4:29:16" },
+            44: { title: "I know how to~ (나 ~하는 방법을 알아)", time: "4:29:26 ~ 4:35:55" },
+            45: { title: "Do you know how to~ (너 ~하는 방법을 알아?)", time: "4:35:07 ~ 4:41:13" },
+            46: { title: "Do you know what? (너 ~이 무엇인지 알아?)", time: "4:41:23 ~ 4:47:03" },
+            47: { title: "Did you know~ (~을 알고 있었어?)", time: "4:47:15 ~ 4:52:22" },
+            48: { title: "I think I should~ (나 ~해야할 것 같아)", time: "4:52:34 ~ 4:57:23" },
+            49: { title: "I don’t think I should~ (나 ~하면 안될 것 같아)", time: "4:57:33 ~ 5:03:57" },
+            50: { title: "I never thought~ (~라고 생각도 못했어)", time: "5:04:09 ~ 5:09:14" },
+            51: { title: "I thought it was~ (~였다고 생각했어)", time: "5:09:26 ~ 5:14:43" },
+            52: { title: "Don’t even think about~ (~할 생각도 하지마)", time: "5:14:54 ~ 5:19:39" },
+            53: { title: "Who’s going to~ (누가 ~할까?)", time: "5:19:50 ~ 5:26:29" },
+            54: { title: "Who would~? (누가 ~을 하겠어?)", time: "5:26:41 ~ 5:32:55" },
+            55: { title: "What if~ (만약에 ~하면 어떨까(어쩌지)?)", time: "5:33:09 ~ 5:39:46" },
+            56: { title: "What kind of~? (~은 어떤 유형이야?)", time: "5:39:57 ~ 5:44:58" },
+            57: { title: "What do you say to~ (~(은) 어때?)", time: "5:45:11 ~ 5:50:14" },
+            58: { title: "What makes you~ (무엇이 너를 ~하게 해(만들어)?)", time: "5:50:24 ~ 5:56:38" },
+            59: { title: "How come~? (어떻게(어째서) ~일 수 있어?)", time: "5:56:48 ~ 6:02:05" },
+            60: { title: "How do you know~? (어떻게 ~을 아는거야?)", time: "6:02:16 ~ 6:08:20" },
+            61: { title: "How do you like~? (~이 마음에 들어?)", time: "6:08:32 ~ 6:14:20" },
+            62: { title: "How long have you been~? (~한지 얼마나 됐어?)", time: "6:14:31 ~ 6:21:32" },
+            63: { title: "When was the last time~? (언제 마지막으로 ~했지?)", time: "6:21:43 ~ 6:27:02" },
+            64: { title: "Why do you think~? (왜 ~라고 생각해?)", time: "6:27:14 ~ 6:32:42" },
+            65: { title: "You’ll be able to~ (너는 ~할 수 있을거야)", time: "6:32:52 ~ 6:38:41" },
+            66: { title: "I’d rather~ (차라리 ~할래)", time: "6:38:51 ~ 6:44:03" },
+            67: { title: "I would say~ (~라고 할 수 있어)", time: "6:44:14 ~ 6:49:27" },
+            68: { title: "I wouldn’t mind~ (~해도 상관없어)", time: "6:49:37 ~ 6:55:24" },
+            69: { title: "I wouldn’t be surprised if ~ (~라고 해도 놀라지 않을거야)", time: "6:55:35 ~ 7:00:04" },
+            70: { title: "You would have to~ (너 ~해야 할거야)", time: "7:00:14 ~ 7:06:41" },
+            71: { title: "You wouldn’t believe~ (너 ~를 믿지 못 할거야)", time: "7:06:52 ~ 7:12:14" },
+            72: { title: "Can you help me~? (~ 좀 도와줄래?)", time: "7:12:25 ~ 7:17:33" },
+            73: { title: "Can you tell me~? (~을 알려줄래?)", time: "7:17:44 ~ 7:23:03" },
+            74: { title: "I can’t say~ (~라고 말할 수 없어)", time: "7:23:13 ~ 7:28:51" },
+            75: { title: "I can’t believe~ (~을 믿을 수 없어)", time: "7:29:01 ~ 7:35:03" },
+            76: { title: "I can’t tell~ (~을 말해줄 수 없어)", time: "7:35:13 ~ 7:39:34" },
+            77: { title: "I can’t imagine~ (~을 상상할 수 없어)", time: "7:39:44 ~ 7:44:35" },
+            78: { title: "I can’t help but~ (~하지 않을 수 없었어)", time: "7:44:45 ~ 7:49:13" },
+            79: { title: "I can’t afford to~ (~할 여유가 없어)", time: "7:49:23 ~ 7:53:48" },
+            80: { title: "I could tell~ (~을 알 수 있었어)", time: "7:53:59 ~ 7:57:44" },
+            81: { title: "I could have been~ (~일 수도 있었어)", time: "7:57:56 ~ 8:02:13" },
+            82: { title: "May I help you~? (제가 ~을 도와드릴까요?)", time: "8:02:23 ~ 8:07:07" },
+            83: { title: "You might have~ (~했을지도 몰라)", time: "8:07:18 ~ 8:11:24" },
+            84: { title: "You might think~ (~라고 생각할지도 몰라)", time: "8:11:34 ~ 8:15:23" },
+            85: { title: "I might be able to~ (~할 수 있을지도 몰라)", time: "8:15:33 ~ 8:19:42" },
+            86: { title: "I should be able to~ (꼭 ~할 수 있을거야)", time: "8:19:53 ~ 8:23:53" },
+            87: { title: "I should have known~ (~을 알았어야 했어)", time: "8:24:03 ~ 8:27:52" },
+            88: { title: "You should know~ (~을 알아야 해)", time: "8:28:04 ~ 8:32:02" },
+            89: { title: "You should have seen~ (~을 봤어야 해)", time: "8:33:12 ~ 8:36:31" },
+            90: { title: "I must say~ (~을 말해야 해)", time: "8:36:41 ~ 8:40:47" },
+            91: { title: "I must admit~ (~을 인정해야 해)", time: "8:40:57 ~ 8:44:50" },
+            92: { title: "I feel like~ (~인 것 같은 기분이야)", time: "8:45:00 ~ 8:49:12" },
+            93: { title: "It seems like~ (~인듯 해)", time: "8:49:23 ~ 8:53:18" },
+            94: { title: "I like the way~ (~그대로(인채)가 좋아)", time: "8:53:29 ~ 8:57:42" },
+            95: { title: "I wonder if~ (~인지 궁금해)", time: "8:57:54 ~ 9:02:09" },
+            96: { title: "Do you mind if I~ (내가 ~해도 괜찮지?)", time: "9:02:19 ~ 9:06:43" },
+            97: { title: "I used to~ (예전에 ~ 했었어)", time: "9:06:53 ~ 9:10:48" },
+            98: { title: "I look forward to~ (~이 기대돼)", time: "9:10:58 ~ 9:14:53" },
+            99: { title: "I came up with~ (~을 생각해냈어)", time: "9:15:03 ~ 9:19:55" },
+            100: { title: "Make sure~ (꼭 ~해야 해 / 절대 ~하면 안돼)", time: "미제공" }
+        };
+
+        // 각 Day별 기본 빈 10문장 세트 생성 (1번 칸에는 핵심 패턴 뼈대 자동 표시)
+        const getInitialSentencesForDay = (day) => {
+            const topicStr = dayScheduleData[day]?.title || "";
+            const match = topicStr.match(/^(.+?)\s*\((.+)\)$/);
+            const patternEng = match ? match[1].trim() : "";
+            const patternKor = match ? match[2].trim() : "";
+
+            return Array.from({ length: 10 }, (_, idx) => {
+                if (idx === 0 && patternEng) {
+                    return { eng: patternEng, kor: patternKor, highlight: false };
+                }
+                return { eng: "", kor: "", highlight: false };
+            });
+        };
+
+        const StudyApp = () => {
+            const [user, setUser] = useState(null);
+            const [authReady, setAuthReady] = useState(false);
+            const [loginBusy, setLoginBusy] = useState(false);
+            const [loginError, setLoginError] = useState('');
+            
+            const [editingNoteId, setEditingNoteId] = useState(null);
+            const [editEng, setEditEng] = useState("");
+            const [editKor, setEditKor] = useState("");
+            const [editTag, setEditTag] = useState("");
+            const [showDayListModal, setShowDayListModal] = useState(false);
+            const [daySearchQuery, setDaySearchQuery] = useState("");
+            const [toastMessage, setToastMessage] = useState("");
+
+            const [currentDay, setCurrentDay] = useState(() => {
+                const savedDay = localStorage.getItem('koneeLastVisitedDay');
+                const parsed = savedDay ? parseInt(savedDay) : 1;
+                return (parsed >= 1 && parsed <= 100) ? parsed : 1;
+            });
+            const [isEditingDay, setIsEditingDay] = useState(false);
+            const [tempDay, setTempDay] = useState(currentDay); 
+
+            // 유튜브 플레이어 제어용 state (재생 시점 점프 및 강제 리로드 트리거)
+            const [videoStartSec, setVideoStartSec] = useState(() => {
+                const timeRange = dayScheduleData[currentDay]?.time || "00:10 ~ 05:52";
+                return parseTimeToSeconds(timeRange.split('~')[0]);
+            });
+            const [videoAutoplay, setVideoAutoplay] = useState(0);
+            const [videoReplayKey, setVideoReplayKey] = useState(0);
+            
+            const [sentences, setSentences] = useState(() => {
+                try {
+                    const localSaved = localStorage.getItem(`konee_local_day_${currentDay}`);
+                    if (localSaved) {
+                        const parsed = JSON.parse(localSaved);
+                        if (parsed.sentences) return parsed.sentences;
+                    }
+                } catch (e) {}
+                return getInitialSentencesForDay(currentDay);
+            });
+            const [notes, setNotes] = useState(() => {
+                try {
+                    const localGlobal = localStorage.getItem('konee_local_global');
+                    if (localGlobal) {
+                        const parsed = JSON.parse(localGlobal);
+                        if (parsed.notes) return parsed.notes;
+                    }
+                } catch (e) {}
+                return [];
+            });
+            const [completedDates, setCompletedDates] = useState(() => {
+                try {
+                    const localGlobal = localStorage.getItem('konee_local_global');
+                    if (localGlobal) {
+                        const parsed = JSON.parse(localGlobal);
+                        if (parsed.completedDates) return normalizeDates(parsed.completedDates);
+                    }
+                } catch (e) {}
+                return [];
+            });
+            
+            const [topic, setTopic] = useState(dayScheduleData[currentDay]?.title || "");
+            const [isEditingTopic, setIsEditingTopic] = useState(false);
+            const [tempTopic, setTempTopic] = useState("");
+            
+            const [activeTab, setActiveTab] = useState('challenge'); 
+            const [viewDate, setViewDate] = useState(new Date());
+
+            const [timeLeft, setTimeLeft] = useState(3600);
+            const [isActive, setIsActive] = useState(false);
+            const [timerEndTime, setTimerEndTime] = useState(null); 
+            
+            const [showCelebration, setShowCelebration] = useState(false);
+            const [hideEnglish, setHideEnglish] = useState(false);
+            const [revealedIndices, setRevealedIndices] = useState([]);
+            const [newNoteEng, setNewNoteEng] = useState("");
+            const [newNoteKor, setNewNoteKor] = useState("");
+
+            const [repetitionCount, setRepetitionCount] = useState(0);
+            const [silverAwarded, setSilverAwarded] = useState(false); 
+
+            // 검색 & 필터 State
+            const [searchQuery, setSearchQuery] = useState("");
+            const [selectedTag, setSelectedTag] = useState("");
+            const [showHighlightedOnly, setShowHighlightedOnly] = useState(false);
+
+            const [newNoteTag, setNewNoteTag] = useState("");
+            const [showRandomReview, setShowRandomReview] = useState(false);
+            const [randomNotes, setRandomNotes] = useState([]);
+
+            const [notesPage, setNotesPage] = useState(1);
+            const NOTES_PER_PAGE = 10;
+
+            // 글로벌 하이라이트 모아보기 State
+            const [globalHighlights, setGlobalHighlights] = useState([]);
+            const [isLoadingHighlights, setIsLoadingHighlights] = useState(false);
+
+            const showToast = (msg) => {
+                setToastMessage(msg);
+                setTimeout(() => setToastMessage(""), 3000);
+            };
+
+            // 아빠의 Google 계정으로 로그인. Firebase Auth가 세션을 유지합니다.
+            useEffect(() => {
+                getRedirectResult(auth).catch((error) => {
+                    console.warn('Google redirect login:', error);
+                    setLoginError('구글 로그인에 실패했어요. Firebase 승인 도메인과 로그인 설정을 확인해 주세요.');
+                });
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u || null);
+                    setAuthReady(true);
+                }, (error) => {
+                    console.error('Auth state:', error);
+                    setAuthReady(true);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const loginWithGoogle = async () => {
+                setLoginBusy(true);
+                setLoginError('');
+                try {
+                    const provider = new GoogleAuthProvider();
+                    provider.setCustomParameters({ prompt: 'select_account' });
+                    await signInWithPopup(auth, provider);
+                } catch (error) {
+                    console.error('Google sign in:', error);
+                    if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment'].includes(error.code)) {
+                        try { await signInWithRedirect(auth, new GoogleAuthProvider()); return; }
+                        catch (redirectError) { console.error('Redirect sign in:', redirectError); }
+                    }
+                    if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
+                        setLoginError('로그인할 수 없어요. Firebase에서 Google 로그인과 GitHub Pages 승인 도메인을 확인해 주세요.');
+                    }
+                } finally {
+                    setLoginBusy(false);
+                }
+            };
+
+            const logoutGoogle = async () => {
+                try { await signOut(auth); }
+                catch (error) { console.error('Google sign out:', error); }
+            };
+
+            useEffect(() => {
+                setRevealedIndices([]);
+            }, [activeTab, currentDay, notesPage]); 
+
+            // 모든 Day의 하이라이트 문장을 모아오는 Effect (로컬스토리지 + 파이어베이스 병합)
+            useEffect(() => {
+                const fetchGlobalHighlights = async () => {
+                    if (!showHighlightedOnly || activeTab !== 'challenge') return;
+                    
+                    setIsLoadingHighlights(true);
+                    let highlightsMap = new Map();
+
+                    // 1. 로컬스토리지 우선 스캔
+                    for (let d = 1; d <= 100; d++) {
+                        try {
+                            const localRaw = localStorage.getItem(`konee_local_day_${d}`);
+                            if (localRaw) {
+                                const parsed = JSON.parse(localRaw);
+                                if (parsed.sentences) {
+                                    parsed.sentences.forEach((s, idx) => {
+                                        if (s.highlight) {
+                                            highlightsMap.set(`${d}_${idx}`, { ...s, day: d, originalIndex: idx });
+                                        }
+                                    });
+                                }
+                            }
+                        } catch (e) {}
+                    }
+
+                    // 2. 파이어베이스 스캔 및 병합
+                    if (user) {
+                        const studyDataRef = collection(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data');
+                        try {
+                            const snapshot = await getDocs(studyDataRef);
+                            snapshot.forEach(docSnap => {
+                                const id = docSnap.id;
+                                if (id.startsWith('day_')) {
+                                    const dayNum = parseInt(id.replace('day_', ''));
+                                    const data = docSnap.data();
+                                    if (data.sentences) {
+                                        data.sentences.forEach((s, idx) => {
+                                            if (s.highlight) {
+                                                highlightsMap.set(`${dayNum}_${idx}`, { ...s, day: dayNum, originalIndex: idx });
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+                        } catch (error) {
+                            console.error("Error fetching global highlights:", error);
+                        }
+                    }
+
+                    const allHighlights = Array.from(highlightsMap.values());
+                    allHighlights.sort((a, b) => a.day !== b.day ? a.day - b.day : a.originalIndex - b.originalIndex);
+                    setGlobalHighlights(allHighlights);
+                    setIsLoadingHighlights(false);
+                };
+
+                fetchGlobalHighlights();
+            }, [showHighlightedOnly, activeTab, user]);
+
+            // Day Data 읽기 (LocalStorage 즉시 로드 -> Firebase 실시간 동기화)
+            useEffect(() => {
+                const defaultTopic = dayScheduleData[currentDay]?.title || `Day ${currentDay} 패턴 연습`;
+                
+                // 로컬스토리지 우선 확인
+                let hasLocal = false;
+                try {
+                    const localSaved = localStorage.getItem(`konee_local_day_${currentDay}`);
+                    if (localSaved) {
+                        const parsed = JSON.parse(localSaved);
+                        setSentences(parsed.sentences || getInitialSentencesForDay(currentDay));
+                        setRepetitionCount(parsed.repetitionCount || 0);
+                        setTopic(parsed.topic || defaultTopic);
+                        hasLocal = true;
+                    }
+                } catch (e) {}
+
+                if (!hasLocal) {
+                    setTopic(defaultTopic);
+                    setSentences(getInitialSentencesForDay(currentDay));
+                    setRepetitionCount(0);
+                }
+
+                if (!user) return;
+                const dayDocRef = doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', `day_${currentDay}`);
+                
+                const unsubscribe = onSnapshot(dayDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        if (localStorage.getItem(`konee_pending_day_${currentDay}`) === "1") return;
+                        const data = docSnap.data();
+                        const nextSentences = data.sentences || getInitialSentencesForDay(currentDay);
+                        const nextRep = data.repetitionCount || 0;
+                        const nextTopic = data.topic || defaultTopic;
+                        setSentences(nextSentences);
+                        setRepetitionCount(nextRep);
+                        setTopic(nextTopic);
+                        try {
+                            localStorage.setItem(`konee_local_day_${currentDay}`, JSON.stringify({
+                                sentences: nextSentences,
+                                repetitionCount: nextRep,
+                                topic: nextTopic
+                            }));
+                        } catch (e) {}
+                    }
+                }, (error) => {
+                    console.error("Error syncing day data:", error);
+                });
+                // 로그인 전/오프라인에서 기록한 내용도 연결되면 Firebase에 업로드합니다.
+                if (localStorage.getItem(`konee_pending_day_${currentDay}`) === "1") {
+                    try {
+                        const saved = JSON.parse(localStorage.getItem(`konee_local_day_${currentDay}`) || 'null');
+                        if (saved) setDoc(dayDocRef, saved, { merge: true })
+                            .then(() => localStorage.removeItem(`konee_pending_day_${currentDay}`))
+                            .catch(error => console.warn("Day cloud save pending:", error));
+                    } catch (e) { console.warn(e); }
+                }
+                return () => unsubscribe();
+            }, [user, currentDay]);
+
+            // Global Data 읽기 (LocalStorage + Firebase 단일 프로필)
+            useEffect(() => {
+                if (!user) return;
+                const globalDocRef = doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', 'global_data');
+
+                const unsubscribe = onSnapshot(globalDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        if (localStorage.getItem("konee_pending_global") === "1") return;
+                        const data = docSnap.data();
+                        const loadedNotes = data.notes || [];
+                        setNotes(loadedNotes);
+                        
+                        let loadedDates = data.completedDates || [];
+                        if (loadedDates.length > 0 && typeof loadedDates[0] === 'string') {
+                            loadedDates = loadedDates.map(d => ({ date: d, type: '60' }));
+                        }
+                        const normDates = normalizeDates(loadedDates);
+                        setCompletedDates(normDates);
+
+                        try {
+                            localStorage.setItem('konee_local_global', JSON.stringify({
+                                notes: loadedNotes,
+                                completedDates: normDates
+                            }));
+                        } catch (e) {}
+
+                        const today = getLocalToday();
+                        if (data.lastTimerDate && data.lastTimerDate !== today) {
+                             setTimeLeft(3600);
+                             setTimerEndTime(null);
+                             setIsActive(false);
+                             setSilverAwarded(false);
+                             setDoc(globalDocRef, { 
+                                 timerEndTime: null, 
+                                 savedTimeLeft: 3600, 
+                                 silverAwarded: false, 
+                                 lastTimerDate: today 
+                             }, { merge: true });
+                        } else {
+                             if (data.timerEndTime) {
+                                 const now = Date.now();
+                                 if (data.timerEndTime <= now) {
+                                     setTimeLeft(0);
+                                     setTimerEndTime(null);
+                                     setIsActive(false);
+                                 } else {
+                                     setTimerEndTime(data.timerEndTime);
+                                     setIsActive(true);
+                                 }
+                             } else {
+                                 setTimerEndTime(null);
+                                 setIsActive(false);
+                                 if (data.savedTimeLeft !== undefined) setTimeLeft(data.savedTimeLeft);
+                             }
+                             if (data.silverAwarded !== undefined) setSilverAwarded(data.silverAwarded);
+                        }
+                    }
+                }, (error) => {
+                     console.error("Error syncing global data:", error);
+                });
+
+                if (localStorage.getItem("konee_pending_global") === "1") {
+                    try {
+                        const saved = JSON.parse(localStorage.getItem("konee_local_global") || 'null');
+                        if (saved) setDoc(globalDocRef, saved, { merge: true })
+                            .then(() => localStorage.removeItem("konee_pending_global"))
+                            .catch(error => console.warn("Global cloud save pending:", error));
+                    } catch (e) { console.warn(e); }
+                }
+                return () => unsubscribe();
+            }, [user]);
+
+            // 로컬스토리지 + 파이어베이스 이중 저장 함수 (Day별 문장 & 반복 체크)
+            const saveDayData = async (newSentences, newRepCount, newTopic = topic) => {
+                try {
+                    localStorage.setItem(`konee_pending_day_${currentDay}`, "1");
+                    localStorage.setItem(`konee_local_day_${currentDay}`, JSON.stringify({
+                        sentences: newSentences,
+                        repetitionCount: newRepCount,
+                        topic: newTopic
+                    }));
+                } catch (e) {}
+
+                if (!user) return;
+                const dayDocRef = doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', `day_${currentDay}`);
+                await setDoc(dayDocRef, { sentences: newSentences, repetitionCount: newRepCount, topic: newTopic }, { merge: true });
+                localStorage.removeItem(`konee_pending_day_${currentDay}`);
+            };
+
+            // 로컬스토리지 + 파이어베이스 이중 저장 함수 (전체 노트 & 타이머 & 스탬프)
+            const saveGlobalData = async (updates) => {
+                try {
+                    const prevRaw = localStorage.getItem('konee_local_global');
+                    const prevObj = prevRaw ? JSON.parse(prevRaw) : {};
+                    localStorage.setItem('konee_pending_global', '1');
+                    localStorage.setItem('konee_local_global', JSON.stringify({ ...prevObj, ...updates }));
+                } catch (e) {}
+
+                if (!user) return;
+                const globalDocRef = doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', 'global_data');
+                const today = getLocalToday();
+                await setDoc(globalDocRef, { ...updates, lastTimerDate: today }, { merge: true });
+                localStorage.removeItem("konee_pending_global");
+            };
+
+            const triggerGoalAchieved = async (type) => {
+                const today = getLocalToday();
+                let loadedDates = [...completedDates];
+                const existingIndex = loadedDates.findIndex(r => r.date === today);
+                if (existingIndex !== -1) {
+                    if (type === '60') {
+                        loadedDates[existingIndex] = { date: today, type: '60' };
+                    }
+                } else {
+                    loadedDates.push({ date: today, type: type });
+                }
+                setCompletedDates(loadedDates);
+                saveGlobalData({ completedDates: loadedDates });
+
+                if (type === '60') {
+                    setShowCelebration(true);
+                    setTimeout(() => setShowCelebration(false), 5000);
+                }
+            };
+
+            useEffect(() => {
+                let interval = null;
+                if (isActive && timerEndTime) {
+                    interval = setInterval(() => {
+                        const now = Date.now();
+                        const diff = Math.ceil((timerEndTime - now) / 1000);
+
+                        if (diff <= 1800 && diff > 0 && !silverAwarded) {
+                            setSilverAwarded(true);
+                            saveGlobalData({ silverAwarded: true });
+                            triggerGoalAchieved('30');
+                        }
+                        if (diff <= 0) {
+                            setTimeLeft(0);
+                            setIsActive(false);
+                            setTimerEndTime(null);
+                            setSilverAwarded(true);
+                            triggerGoalAchieved('60');
+                            saveGlobalData({ timerEndTime: null, savedTimeLeft: 0, silverAwarded: true });
+                        } else {
+                            setTimeLeft(diff);
+                        }
+                    }, 1000);
+                }
+                return () => clearInterval(interval);
+            }, [isActive, timerEndTime, silverAwarded, user]);
+
+            // 자정 자동 리셋
+            useEffect(() => {
+                const lastCheckedDate = { current: getLocalToday() };
+                
+                const midnightCheck = setInterval(() => {
+                    const now = getLocalToday();
+                    if (now !== lastCheckedDate.current) {
+                        lastCheckedDate.current = now;
+                        setTimeLeft(3600);
+                        setTimerEndTime(null);
+                        setIsActive(false);
+                        setSilverAwarded(false);
+                        saveGlobalData({ timerEndTime: null, savedTimeLeft: 3600, silverAwarded: false });
+                    }
+                }, 30000);
+
+                return () => clearInterval(midnightCheck);
+            }, [user]);
+
+            const handleStartTimer = () => {
+                if (isActive) {
+                    setIsActive(false);
+                    setTimerEndTime(null);
+                    saveGlobalData({ timerEndTime: null, savedTimeLeft: timeLeft }); 
+                } else {
+                    const duration = timeLeft > 0 ? timeLeft : 3600; 
+                    const isNewStart = duration === 3600;
+                    if (isNewStart) setSilverAwarded(false);
+
+                    const newEndTime = Date.now() + duration * 1000;
+                    setTimerEndTime(newEndTime);
+                    setIsActive(true);
+                    
+                    const updates = { timerEndTime: newEndTime, savedTimeLeft: duration };
+                    if (isNewStart) updates.silverAwarded = false;
+                    saveGlobalData(updates);
+                }
+            };
+
+            const handleResetTimer = () => {
+                setIsActive(false);
+                setTimerEndTime(null);
+                setTimeLeft(3600);
+                setSilverAwarded(false);
+                saveGlobalData({ timerEndTime: null, savedTimeLeft: 3600, silverAwarded: false });
+            };
+
+            const updateSentence = (index, field, value) => {
+                const newSentences = [...sentences];
+                newSentences[index] = { ...newSentences[index], [field]: value };
+                setSentences(newSentences);
+                saveDayData(newSentences, repetitionCount);
+            };
+
+            const toggleHighlight = async (index, isNote = false, noteId = null, isGlobal = false) => {
+                if (isNote) {
+                    const newNotes = notes.map(n => 
+                        n.id === noteId ? { ...n, highlight: !n.highlight } : n
+                    );
+                    setNotes(newNotes);
+                    await saveGlobalData({ notes: newNotes });
+                } else if (isGlobal) {
+                    const globalItem = globalHighlights[index];
+                    setGlobalHighlights(prev => prev.filter((_, i) => i !== index));
+                    
+                    if (globalItem.day === currentDay) {
+                        const newSentences = [...sentences];
+                        if (newSentences[globalItem.originalIndex]) {
+                            newSentences[globalItem.originalIndex].highlight = false;
+                            setSentences(newSentences);
+                        }
+                    }
+
+                    // 로컬스토리지 업데이트
+                    try {
+                        const localRaw = localStorage.getItem(`konee_local_day_${globalItem.day}`);
+                        if (localRaw) {
+                            const parsed = JSON.parse(localRaw);
+                            if (parsed.sentences && parsed.sentences[globalItem.originalIndex]) {
+                                parsed.sentences[globalItem.originalIndex].highlight = false;
+                                localStorage.setItem(`konee_local_day_${globalItem.day}`, JSON.stringify(parsed));
+                            }
+                        }
+                    } catch (e) {}
+                    
+                    if (user) {
+                        const dayDocRef = doc(db, 'artifacts', appId, 'users', SINGLE_USER_DOC_KEY, 'study_data', `day_${globalItem.day}`);
+                        const daySnap = await getDoc(dayDocRef);
+                        if (daySnap.exists()) {
+                            const data = daySnap.data();
+                            const newDaySentences = [...data.sentences];
+                            if (newDaySentences[globalItem.originalIndex]) {
+                                newDaySentences[globalItem.originalIndex].highlight = false;
+                                await setDoc(dayDocRef, { sentences: newDaySentences, repetitionCount: data.repetitionCount || 0, topic: data.topic || "" }, { merge: true });
+                            }
+                        }
+                    }
+                } else {
+                    const newSentences = [...sentences];
+                    newSentences[index] = { 
+                        ...newSentences[index], 
+                        highlight: !newSentences[index].highlight 
+                    };
+                    setSentences(newSentences);
+                    saveDayData(newSentences, repetitionCount);
+                }
+            };
+
+            const toggleRepetition = (index) => {
+                let newCount = index + 1;
+                if (repetitionCount === newCount) newCount = index; 
+                setRepetitionCount(newCount);
+                saveDayData(sentences, newCount);
+            };
+
+            const speakText = (text) => {
+                if (!text) return;
+                window.speechSynthesis.cancel();
+                const cleanText = text.replace(/~/g, ' ');
+                const utterance = new SpeechSynthesisUtterance(cleanText);
+                utterance.lang = 'en-US'; 
+                utterance.rate = 0.95; 
+                window.speechSynthesis.speak(utterance);
+            };
+
+            const addNote = async () => {
+                if (!newNoteEng.trim()) return;
+                const newNote = { 
+                    id: Date.now(), 
+                    eng: newNoteEng, 
+                    kor: newNoteKor,
+                    tag: newNoteTag.trim() || "",
+                    date: new Date().toLocaleDateString(),
+                    highlight: false
+                };
+                
+                const newNoteList = [newNote, ...notes];
+                setNotes(newNoteList);
+                setNewNoteEng("");
+                setNewNoteKor("");
+                setNewNoteTag("");
+                setNotesPage(1);
+                
+                try {
+                    await saveGlobalData({ notes: newNoteList });
+                    showToast("표현이 저장되었습니다!");
+                } catch (error) {
+                    console.error("Error adding note:", error);
+                    showToast("로컬에 저장되었습니다.");
+                }
+            };
+
+            const deleteNote = async (id) => {
+                const newNoteList = notes.filter(n => n.id !== id);
+                setNotes(newNoteList);
+                try {
+                    await saveGlobalData({ notes: newNoteList });
+                    showToast("삭제되었습니다.");
+                } catch (error) {
+                    console.error("Error deleting note:", error);
+                }
+            };
+
+            const startEditing = (note) => {
+                setEditingNoteId(note.id);
+                setEditEng(note.eng);
+                setEditKor(note.kor);
+                setEditTag(note.tag || "");
+            };
+
+            const cancelEdit = () => {
+                setEditingNoteId(null);
+                setEditEng("");
+                setEditKor("");
+                setEditTag("");
+            };
+
+            const saveEdit = async () => {
+                const updatedNotes = notes.map(n => 
+                    n.id === editingNoteId ? { ...n, eng: editEng, kor: editKor, tag: editTag.trim() } : n
+                );
+                setNotes(updatedNotes);
+                setEditingNoteId(null);
+                setEditTag("");
+                try {
+                    await saveGlobalData({ notes: updatedNotes });
+                    showToast("수정 내용이 저장되었습니다.");
+                } catch (error) {
+                    console.error("Error saving edit:", error);
+                }
+            };
+
+            // Day 변경 시 해당 유튜브 타임라인으로 자동 이동
+            const selectDay = (dayNum, autoStartVideo = true) => {
+                const clamped = Math.min(100, Math.max(1, dayNum));
+                setCurrentDay(clamped);
+                localStorage.setItem('koneeLastVisitedDay', clamped);
+                setShowDayListModal(false);
+                setShowHighlightedOnly(false);
+
+                const timeRange = dayScheduleData[clamped]?.time || "미제공";
+                const startSec = timeRange === "미제공" ? 0 : parseTimeToSeconds(timeRange.split('~')[0]);
+                setVideoStartSec(startSec);
+                if (autoStartVideo) {
+                    setVideoAutoplay(0); // iOS Safari는 사용자가 영상 내 ▶을 눌러 재생하는 방식이 가장 안정적입니다.
+                    setVideoReplayKey(prev => prev + 1);
+                }
+            };
+
+            const handleReplayFromDayStart = () => {
+                const timeRange = dayScheduleData[currentDay]?.time || "미제공";
+                if (timeRange === "미제공") { showToast("Day 100은 영상 시작 시각이 제공되지 않았어요."); return; }
+                const startSec = parseTimeToSeconds(timeRange.split('~')[0]);
+                setVideoStartSec(startSec);
+                setVideoAutoplay(0);
+                setVideoReplayKey(prev => prev + 1);
+                showToast(`Day ${currentDay} 시작 지점(${timeRange.split('~')[0].trim()})으로 이동!`);
+            };
+
+            const changeDay = (direction) => {
+                const newDay = direction === 'next' ? currentDay + 1 : currentDay - 1;
+                if (newDay >= 1 && newDay <= 100) {
+                    selectDay(newDay, true);
+                } else if (newDay > 100) {
+                    showToast("마지막 Day 100입니다! 🎉");
+                } else {
+                    showToast("첫 번째 Day 1입니다!");
+                }
+            };
+
+            const handleDaySubmit = () => {
+                let d = parseInt(tempDay);
+                if (isNaN(d) || d < 1) d = 1;
+                if (d > 100) d = 100;
+                selectDay(d, true);
+                setIsEditingDay(false);
+            };
+
+            const formatTime = (seconds) => {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            };
+
+            const toggleReveal = (index) => {
+                if (!hideEnglish) return;
+                setRevealedIndices(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
+            };
+
+            const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+            const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+            const changeMonth = (offset) => {
+                const newDate = new Date(viewDate);
+                newDate.setMonth(newDate.getMonth() + offset);
+                setViewDate(newDate);
+            };
+
+            // 검색 & 태그 필터 + 하이라이트 필터 적용
+            const allTags = [...new Set(notes.filter(n => n.tag).map(n => n.tag))];
+            
+            const filteredNotes = notes.filter(note => {
+                const matchesSearch = searchQuery.trim() 
+                    ? (note.eng && note.eng.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                      (note.kor && note.kor.includes(searchQuery))
+                    : true;
+                const matchesTag = selectedTag ? note.tag === selectedTag : true;
+                const matchesHighlight = showHighlightedOnly ? note.highlight : true;
+                return matchesSearch && matchesTag && matchesHighlight;
+            });
+
+            const indexOfLastNote = notesPage * NOTES_PER_PAGE;
+            const indexOfFirstNote = indexOfLastNote - NOTES_PER_PAGE;
+            const currentNotes = filteredNotes.slice(indexOfFirstNote, indexOfLastNote);
+            const totalPages = Math.ceil(filteredNotes.length / NOTES_PER_PAGE);
+            const paginate = (pageNumber) => setNotesPage(pageNumber);
+
+            // Streak 계산
+            const calculateStreak = () => {
+                if (!completedDates || completedDates.length === 0) return { current: 0, best: 0 };
+                
+                const sortedDates = [...completedDates]
+                    .map(d => d.date)
+                    .sort((a, b) => b.localeCompare(a));
+                
+                const unique = [...new Set(sortedDates)];
+                
+                let currentStreak = 0;
+                const today = getLocalToday();
+                const yesterday = (() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() - 1);
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                })();
+                
+                let startIdx = unique.indexOf(today);
+                if (startIdx === -1) startIdx = unique.indexOf(yesterday);
+                
+                if (startIdx !== -1) {
+                    for (let i = startIdx; i < unique.length; i++) {
+                        const expected = new Date();
+                        expected.setDate(expected.getDate() - (i - startIdx) - (unique[startIdx] === yesterday ? 1 : 0));
+                        const expectedStr = `${expected.getFullYear()}-${String(expected.getMonth() + 1).padStart(2, '0')}-${String(expected.getDate()).padStart(2, '0')}`;
+                        if (unique[i] === expectedStr) {
+                            currentStreak++;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                
+                let bestStreak = 0;
+                let tempStreak = 1;
+                const sortedAsc = [...unique].sort();
+                for (let i = 1; i < sortedAsc.length; i++) {
+                    const prev = new Date(sortedAsc[i - 1]);
+                    const curr = new Date(sortedAsc[i]);
+                    const diff = (curr - prev) / (1000 * 60 * 60 * 24);
+                    if (diff === 1) {
+                        tempStreak++;
+                    } else {
+                        bestStreak = Math.max(bestStreak, tempStreak);
+                        tempStreak = 1;
+                    }
+                }
+                bestStreak = Math.max(bestStreak, tempStreak);
+                
+                return { current: currentStreak, best: bestStreak };
+            };
+            
+            const streak = calculateStreak();
+
+            // 랜덤 복습
+            const generateRandomNotes = () => {
+                if (notes.length === 0) {
+                    showToast("먼저 노트에 표현을 추가해주세요!");
+                    return;
+                }
+                const count = Math.min(5, notes.length);
+                const shuffled = [...notes].sort(() => Math.random() - 0.5);
+                setRandomNotes(shuffled.slice(0, count));
+                setShowRandomReview(true);
+            };
+
+            // 내보내기 (CSV)
+            const exportNotesCSV = () => {
+                if (notes.length === 0) {
+                    showToast("내보낼 노트가 없습니다.");
+                    return;
+                }
+                const BOM = '\uFEFF';
+                const header = 'English,Korean,Tag,Date\n';
+                const rows = notes.map(n => {
+                    const eng = `"${(n.eng || '').replace(/"/g, '""')}"`;
+                    const kor = `"${(n.kor || '').replace(/"/g, '""')}"`;
+                    const tag = `"${(n.tag || '').replace(/"/g, '""')}"`;
+                    const date = `"${(n.date || '').replace(/"/g, '""')}"`;
+                    return `${eng},${kor},${tag},${date}`;
+                }).join('\n');
+                
+                const blob = new Blob([BOM + header + rows], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `konees_english_notes_${getLocalToday()}.csv`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                showToast("CSV 파일이 다운로드되었습니다.");
+            };
+
+            // 전체 학습 기록 백업: 표현, Day별 연습 문장, 달력, 선택 Day
+            const exportFullBackup = () => {
+                const payload = { format: 'konees-english-backup-v1', exportedAt: new Date().toISOString(), storage: {} };
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith('konee_') || key === 'koneeLastVisitedDay')) {
+                        payload.storage[key] = localStorage.getItem(key);
+                    }
+                }
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `konees_full_backup_${getLocalToday()}.json`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 2000);
+                showToast('전체 학습 기록 백업 파일을 저장했어요.');
+            };
+
+            // Day 1~100 검색 필터링
+            const filteredDayList = Object.entries(dayScheduleData).filter(([dayNum, info]) => {
+                if (!daySearchQuery.trim()) return true;
+                const q = daySearchQuery.toLowerCase();
+                return `day ${dayNum}`.includes(q) || dayNum.includes(q) || info.title.toLowerCase().includes(q) || info.time.includes(q);
+            });
+
+            const currentTimeline = dayScheduleData[currentDay]?.time || "미제공";
+            const currentStartTimeStr = currentTimeline === "미제공" ? "시각 미제공" : currentTimeline.split('~')[0].trim();
+
+            return (
+                <div className="min-h-screen bg-[#F3F4F6] text-slate-800 px-3 py-4 sm:p-6 md:p-8 selection:bg-[#B692F6] selection:text-white pb-12">
+                    {/* Toast Notification */}
+                    {toastMessage && (
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white px-5 py-3 rounded-full text-sm font-bold shadow-xl backdrop-blur-md transition-all whitespace-nowrap">
+                            {toastMessage}
+                        </div>
+                    )}
+
+                    {/* 구글 로그인 및 계정 확인: Firestore 규칙은 아래 UID와 일치하는 계정만 허용해야 합니다. */}
+                    <div className="max-w-5xl mx-auto mb-3 bg-white rounded-2xl border border-violet-100 px-4 py-3 shadow-sm">
+                        {!authReady ? (
+                            <p className="text-sm font-semibold text-slate-500">로그인 상태 확인 중...</p>
+                        ) : user ? (
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                    <p className="text-sm font-bold text-violet-800">✓ 구글 로그인: {user.displayName || user.email || '로그인 완료'}</p>
+                                    <p className="text-[11px] break-all text-slate-500">Firebase UID (보안 규칙에 입력): {user.uid}</p>
+                                </div>
+                                <button onClick={logoutGoogle} className="text-xs font-bold bg-slate-100 px-3 py-2 rounded-xl">로그아웃</button>
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p className="font-extrabold text-slate-800">아빠의 영어 공부 기록</p>
+                                    <p className="text-xs text-slate-500">구글 계정으로 로그인하면 학습 기록을 Firebase에도 저장해요.</p>
+                                    {loginError && <p role="alert" className="text-xs text-rose-600 mt-1">{loginError}</p>}
+                                </div>
+                                <button onClick={loginWithGoogle} disabled={loginBusy} className="bg-violet-600 text-white rounded-xl px-4 py-3 font-extrabold text-sm disabled:opacity-50">
+                                    {loginBusy ? '로그인 중...' : 'Google 계정으로 로그인'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Day 1~100 전체 패턴 & 타임라인 목록 모달 */}
+                    {showDayListModal && (
+                        <div className="fixed inset-0 flex items-end sm:items-center justify-center z-50 bg-black/50 backdrop-blur-sm sm:p-4">
+                            <div className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+                                <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                                    <div>
+                                        <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                                            <BookOpen size={20} className="text-[#7C3AED]" />
+                                            100 Patterns & 타임라인 목차
+                                        </h3>
+                                        <p className="text-xs text-slate-400 mt-0.5">선택하면 해당 영상 구간으로 바로 이동합니다</p>
+                                    </div>
+                                    <button 
+                                        onClick={() => setShowDayListModal(false)}
+                                        className="p-2.5 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 transition-colors"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                </div>
+                                <div className="p-3 bg-slate-50 border-b border-slate-100">
+                                    <input
+                                        type="text"
+                                        value={daySearchQuery}
+                                        onChange={(e) => setDaySearchQuery(e.target.value)}
+                                        placeholder="🔍 Day 번호, 패턴, 한국어 뜻 검색"
+                                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#7C3AED] outline-none"
+                                    />
+                                </div>
+                                <div className="overflow-y-auto p-3 space-y-2 flex-1">
+                                    {filteredDayList.map(([dayStr, info]) => {
+                                        const dNum = parseInt(dayStr);
+                                        const isCurrent = dNum === currentDay;
+                                        return (
+                                            <button
+                                                key={dNum}
+                                                onClick={() => selectDay(dNum, true)}
+                                                className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-2.5 active:scale-[0.99] ${
+                                                    isCurrent 
+                                                    ? 'bg-[#F5F3FF] border-[#7C3AED] shadow-sm' 
+                                                    : 'bg-white border-slate-100 hover:border-purple-200 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                <div className="flex flex-col gap-1 min-w-0 flex-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`px-2 py-0.5 rounded-lg text-[11px] font-extrabold shrink-0 ${
+                                                            isCurrent ? 'bg-[#7C3AED] text-white' : 'bg-slate-100 text-slate-600'
+                                                        }`}>
+                                                            Day {dNum}
+                                                        </span>
+                                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">
+                                                            <Clock size={11} /> {info.time}
+                                                        </span>
+                                                    </div>
+                                                    <span className={`text-sm font-bold truncate ${isCurrent ? 'text-[#5B21B6]' : 'text-slate-700'}`}>
+                                                        {info.title}
+                                                    </span>
+                                                </div>
+                                                {isCurrent ? (
+                                                    <Check size={18} className="text-[#7C3AED] shrink-0" />
+                                                ) : (
+                                                    <Play size={14} className="text-slate-300 shrink-0" />
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                    {filteredDayList.length === 0 && (
+                                        <div className="text-center py-10 text-slate-400 text-sm">
+                                            검색 결과가 없습니다.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Celebration Modal */}
+                    {showCelebration && (
+                        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/20 backdrop-blur-sm p-4 pointer-events-none">
+                            <div className="bg-white p-8 rounded-3xl shadow-2xl text-center border-4 border-[#B692F6] max-w-sm w-full">
+                                <Trophy className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
+                                <h2 className="text-2xl font-extrabold mb-2 text-[#7C3AED]">Goal Achieved!</h2>
+                                <p className="text-gray-600 text-sm">오늘 1시간 공부 달성! 도장이 찍혔어요 쾅! 🎉</p>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-5 md:gap-6">
+                        {/* HEADER BAR (아이폰 17 모바일 최적화) */}
+                        <div className="lg:col-span-12 flex flex-col gap-3">
+                            {/* 브랜드 타이틀 라인 */}
+                            <div className="flex items-center justify-between px-1">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#5B21B6] flex items-center justify-center text-white font-black text-lg shadow-md shadow-purple-200">
+                                        K
+                                    </div>
+                                    <div>
+                                        <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 leading-none">
+                                            Konee's <span className="text-[#7C3AED]">English</span>
+                                        </h1>
+                                        <p className="text-[11px] font-semibold text-slate-400 mt-0.5">100 Days Pattern & Video Timeline</p>
+                                    </div>
+                                </div>
+                                <div className="bg-white px-3 py-2 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-1.5">
+                                    <CalendarIcon className="w-3.5 h-3.5 text-[#7C3AED]"/>
+                                    <span className="font-bold text-xs text-slate-600">{new Date().toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', weekday: 'short' })}</span>
+                                </div>
+                            </div>
+
+                            {/* Day 네비게이션 바 (아이폰 한 손 조작 최적화) */}
+                            <div className="flex items-center justify-between bg-white rounded-2xl shadow-sm p-1.5 border border-slate-200/80">
+                                <button 
+                                    onClick={() => changeDay('prev')} 
+                                    disabled={currentDay <= 1}
+                                    className={`p-3 rounded-xl transition-colors active:scale-95 ${currentDay <= 1 ? 'text-slate-200' : 'text-slate-500 hover:bg-slate-100 hover:text-[#7C3AED]'}`}
+                                >
+                                    <ChevronLeft size={22} />
+                                </button>
+                                
+                                <div className="flex items-center gap-2">
+                                    {isEditingDay ? (
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-lg font-extrabold text-[#7C3AED]">Day</span>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="100"
+                                                value={tempDay}
+                                                onChange={(e) => setTempDay(e.target.value)}
+                                                onBlur={handleDaySubmit}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleDaySubmit()}
+                                                className="text-xl font-extrabold text-[#7C3AED] w-16 text-center bg-purple-50 rounded-lg border-b-2 border-[#7C3AED] focus:outline-none py-0.5"
+                                                autoFocus
+                                            />
+                                        </div>
+                                    ) : (
+                                        <button 
+                                            onClick={() => { setTempDay(currentDay); setIsEditingDay(true); }}
+                                            className="text-xl font-extrabold tracking-tight text-slate-900 flex items-center gap-1.5 px-3 py-1 rounded-xl hover:bg-slate-100 transition-colors"
+                                        >
+                                            <span className="text-[#7C3AED]">Day {currentDay}</span>
+                                            <span className="text-xs font-bold text-slate-400">/ 100</span>
+                                        </button>
+                                    )}
+                                    
+                                    {/* 100일 전체 목차 열기 버튼 */}
+                                    <button 
+                                        onClick={() => setShowDayListModal(true)}
+                                        className="flex items-center gap-1 bg-[#F5F3FF] text-[#7C3AED] px-3 py-1.5 rounded-xl text-xs font-extrabold hover:bg-[#EDE9FE] active:scale-95 transition-all"
+                                    >
+                                        <List size={14} />
+                                        <span>전체목록</span>
+                                    </button>
+                                </div>
+
+                                <button 
+                                    onClick={() => changeDay('next')} 
+                                    disabled={currentDay >= 100}
+                                    className={`p-3 rounded-xl transition-colors active:scale-95 ${currentDay >= 100 ? 'text-slate-200' : 'text-slate-500 hover:bg-slate-100 hover:text-[#7C3AED]'}`}
+                                >
+                                    <ChevronRight size={22} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* MAIN STUDY AREA (아이폰 모바일에서 학습 영역이 먼저 보이도록 order 설정) */}
+                        <div className="lg:col-span-8 order-1 lg:order-2 space-y-5">
+                            
+                            {/* 유튜브 타임라인 연동 비디오 플레이어 카드 */}
+                            <div className="bg-white rounded-[2rem] p-3.5 sm:p-5 shadow-xl shadow-slate-200/50 border border-slate-100">
+                                <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="inline-flex items-center gap-1 bg-rose-50 text-rose-600 px-2.5 py-1 rounded-xl text-xs font-extrabold">
+                                            <Youtube size={15} /> Day {currentDay} 강의 구간
+                                        </span>
+                                        <span className="text-xs sm:text-sm font-black text-slate-700 bg-slate-100 px-2.5 py-1 rounded-xl">
+                                            ⏱ {currentTimeline}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <button
+                                            onClick={handleReplayFromDayStart}
+                                            disabled={currentTimeline === "미제공"}
+                                            className="inline-flex items-center gap-1 bg-[#7C3AED] text-white px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-[#6D28D9] active:scale-95 transition-all shadow-sm"
+                                        >
+                                            <Play size={12} fill="currentColor" />
+                                            <span>{currentTimeline === "미제공" ? "영상 처음부터 재생" : `${currentStartTimeStr}부터 재생`}</span>
+                                        </button>
+                                        <a
+                                            href={`https://www.youtube.com/watch?v=${YOUTUBE_VIDEO_ID}&t=${videoStartSec}s`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="p-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl transition-colors"
+                                            title="유튜브 앱으로 열기"
+                                        >
+                                            <ExternalLink size={15} />
+                                        </a>
+                                    </div>
+                                </div>
+                                
+                                <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-slate-900 shadow-inner">
+                                    <iframe
+                                        key={`${currentDay}-${videoReplayKey}`}
+                                        className="w-full h-full"
+                                        src={`https://www.youtube-nocookie.com/embed/${YOUTUBE_VIDEO_ID}?start=${videoStartSec}&autoplay=${videoAutoplay}&rel=0&playsinline=1`}
+                                        title={`Konee's English Day ${currentDay}`}
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                        allowFullScreen
+                                    ></iframe>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3 bg-white rounded-2xl px-4 py-3 border border-slate-100 shadow-sm">
+                                <p className="text-xs text-slate-500 leading-relaxed">🛡️ 표현은 기기에 먼저 저장되며, 구글 로그인 및 Firestore 권한 설정이 완료되면 클라우드에도 저장됩니다. 정기적으로 백업해 주세요.</p>
+                                <button onClick={exportFullBackup} className="shrink-0 bg-purple-100 text-purple-800 rounded-xl px-3 py-2.5 text-xs font-extrabold active:scale-95">전체 백업</button>
+                            </div>
+
+                            {/* 패턴 문장 연습 & 노트 카드 */}
+                            <div className="bg-white rounded-[2rem] p-4 sm:p-6 md:p-8 shadow-xl shadow-slate-200/50">
+                                {/* 탭 & Study Mode 컨트롤 */}
+                                <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center mb-5 gap-3">
+                                    <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl">
+                                        <button 
+                                            onClick={() => setActiveTab('challenge')}
+                                            className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${activeTab === 'challenge' ? 'bg-white text-[#7C3AED] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                        >
+                                            <BookOpen size={16} /> 
+                                            <span>Day {currentDay} 패턴</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => setActiveTab('notes')}
+                                            className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${activeTab === 'notes' ? 'bg-white text-[#BE123C] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                        >
+                                            <Sparkles size={16} /> 
+                                            <span>저장한 표현 ({notes.length})</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Highlight Filter & Study Mode Buttons */}
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => setShowHighlightedOnly(!showHighlightedOnly)}
+                                            className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-sm active:scale-95 ${showHighlightedOnly ? 'bg-yellow-100 text-yellow-800 ring-2 ring-yellow-400 border border-transparent' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                                            title="강조 표시된 문장만 모아보기"
+                                        >
+                                            <Highlighter size={16}/>
+                                            <span>{showHighlightedOnly ? "하이라이트 ON" : "하이라이트"}</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => setHideEnglish(!hideEnglish)} 
+                                            className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-sm active:scale-95 ${hideEnglish ? 'bg-slate-900 text-white ring-2 ring-slate-300 border border-transparent' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'}`}
+                                        >
+                                            {hideEnglish ? <EyeOff size={16}/> : <Eye size={16}/>}
+                                            <span className="whitespace-nowrap">{hideEnglish ? "암기모드 ON" : "암기모드"}</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* CONTENT SWITCH */}
+                                {activeTab === 'challenge' ? (
+                                    showHighlightedOnly ? (
+                                        /* 전체 하이라이트 모아보기 화면 (Global Highlights) */
+                                        <div className="space-y-5">
+                                            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-2xl text-yellow-800 flex items-center justify-between">
+                                                <div className="flex items-center gap-2 font-bold text-sm">
+                                                    <Highlighter className="w-5 h-5 shrink-0"/>
+                                                    <span>전체 하이라이트 모아보기 (총 {globalHighlights.length}개)</span>
+                                                </div>
+                                                {isLoadingHighlights && <RefreshCw className="w-4 h-4 animate-spin text-yellow-600"/>}
+                                            </div>
+                                            
+                                            {isLoadingHighlights ? (
+                                                <div className="text-center py-10 text-slate-400 font-bold text-sm">전체 데이터에서 찾는 중...</div>
+                                            ) : globalHighlights.length === 0 ? (
+                                                <div className="text-center py-10 text-slate-400 bg-slate-50/50 rounded-2xl border border-slate-100">
+                                                    <Highlighter className="w-10 h-10 mx-auto mb-3 opacity-30 text-yellow-500" />
+                                                    <p className="font-bold text-slate-500 text-sm">강조(Highlight) 표시된 문장이 없습니다.</p>
+                                                    <p className="text-xs mt-1">학습 중 헷갈리는 문장에 형광펜 아이콘을 눌러 추가해보세요!</p>
+                                                </div>
+                                            ) : (
+                                                globalHighlights.map((item, idx) => (
+                                                    <div key={`global-${item.day}-${item.originalIndex}`} className={`group relative bg-white border rounded-2xl p-4 transition-all duration-300 ${hideEnglish ? 'border-[#7C3AED] shadow-md shadow-purple-100' : 'border-slate-200/80'}`}>
+                                                        <button 
+                                                            onClick={() => selectDay(item.day, true)}
+                                                            className={`absolute -left-2 -top-2.5 px-2.5 py-0.5 rounded-full flex items-center justify-center font-bold text-xs shadow-md ${hideEnglish ? 'bg-[#7C3AED] text-white' : 'bg-slate-800 text-white'}`}
+                                                        >
+                                                            Day {item.day}
+                                                        </button>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                                            <div className="relative flex flex-col">
+                                                                <div className="flex justify-between items-center mb-1">
+                                                                    <label className={`text-[11px] font-bold uppercase tracking-wider ${hideEnglish ? 'text-[#7C3AED]' : 'text-slate-400'}`}>English</label>
+                                                                    <div className="flex items-center gap-1">
+                                                                        <button 
+                                                                            onClick={() => speakText(item.eng)}
+                                                                            className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-[#7C3AED] active:scale-90"
+                                                                            title="듣기"
+                                                                        >
+                                                                            <Volume2 size={16} />
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => toggleHighlight(idx, false, null, true)}
+                                                                            className="p-1.5 rounded-full bg-yellow-100 text-yellow-600 active:scale-90"
+                                                                            title="하이라이트 해제"
+                                                                        >
+                                                                            <Highlighter size={14} />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div 
+                                                                    onClick={() => toggleReveal(`global-${idx}`)} 
+                                                                    className={`relative flex-1 rounded-xl overflow-hidden transition-all duration-300 cursor-pointer 
+                                                                        ${hideEnglish && !revealedIndices.includes(`global-${idx}`) ? 'bg-slate-900' : 'bg-yellow-50'}
+                                                                    `}
+                                                                >
+                                                                    <textarea 
+                                                                        value={item.eng} 
+                                                                        readOnly
+                                                                        className={`w-full h-full bg-transparent border-none text-slate-800 font-bold text-base p-3 focus:ring-0 outline-none resize-none transition-all duration-300 
+                                                                            ${hideEnglish && !revealedIndices.includes(`global-${idx}`) ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+                                                                        `} 
+                                                                        rows={2} 
+                                                                        disabled={hideEnglish && !revealedIndices.includes(`global-${idx}`)} 
+                                                                    />
+                                                                    {hideEnglish && !revealedIndices.includes(`global-${idx}`) && (
+                                                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                            <span className="text-3xl">🙈</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-col">
+                                                                <label className="text-[11px] font-bold text-slate-400 mb-1 uppercase tracking-wider">Meaning</label>
+                                                                <div className="bg-slate-50 rounded-xl p-3 flex-1">
+                                                                    <textarea value={item.kor} readOnly className="w-full h-full bg-transparent border-none text-slate-700 text-sm focus:ring-0 outline-none resize-none font-medium leading-relaxed" rows={2}/>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    ) : (
+                                        /* Day 패턴 학습 화면 */
+                                        <>
+                                            {/* 오늘의 패턴 & 포도알 반복 체크 카드 */}
+                                            <div className="mb-6 p-4 sm:p-6 bg-gradient-to-br from-[#F5F3FF] to-[#EDE9FE]/60 rounded-2xl border border-[#DDD6FE]">
+                                                <div className="text-center relative group mb-5">
+                                                    <div className="inline-flex items-center gap-1.5 bg-white px-3.5 py-1 rounded-full border border-purple-200/80 shadow-sm mb-2">
+                                                        <span className="text-[11px] font-extrabold text-[#7C3AED] uppercase tracking-wider">Day {currentDay} Pattern</span>
+                                                        <button 
+                                                            onClick={() => speakText(topic.split('(')[0])}
+                                                            className="text-[#7C3AED] hover:text-[#5B21B6] p-0.5 active:scale-90"
+                                                            title="패턴 발음 듣기"
+                                                        >
+                                                            <Volume2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        {isEditingTopic ? (
+                                                            <div className="flex items-center gap-2 w-full justify-center">
+                                                                <input 
+                                                                    type="text"
+                                                                    value={tempTopic}
+                                                                    onChange={(e) => setTempTopic(e.target.value)}
+                                                                    className="text-base sm:text-xl font-extrabold text-slate-800 bg-white px-3 py-1 rounded-xl border-2 border-purple-400 focus:outline-none text-center flex-1 max-w-md"
+                                                                    autoFocus
+                                                                    onKeyDown={(e) => {
+                                                                        if(e.key === 'Enter') {
+                                                                            setTopic(tempTopic);
+                                                                            saveDayData(sentences, repetitionCount, tempTopic);
+                                                                            setIsEditingTopic(false);
+                                                                        }
+                                                                    }}
+                                                                />
+                                                                <button 
+                                                                    onClick={() => { 
+                                                                        setTopic(tempTopic); 
+                                                                        saveDayData(sentences, repetitionCount, tempTopic); 
+                                                                        setIsEditingTopic(false); 
+                                                                    }} 
+                                                                    className="text-green-600 bg-white p-2 rounded-xl shadow-sm"
+                                                                >
+                                                                    <Check size={18}/>
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => setIsEditingTopic(false)} 
+                                                                    className="text-red-500 bg-white p-2 rounded-xl shadow-sm"
+                                                                >
+                                                                    <X size={18}/>
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <h2 
+                                                                className="text-lg sm:text-2xl font-black text-slate-800 break-keep cursor-pointer hover:text-[#7C3AED] transition-colors flex items-center justify-center gap-1.5 leading-snug"
+                                                                onClick={() => { setTempTopic(topic); setIsEditingTopic(true); }}
+                                                                title="클릭하여 주제 수정"
+                                                            >
+                                                                <span>{topic}</span>
+                                                                <Edit2 size={14} className="text-slate-400 shrink-0" />
+                                                            </h2>
+                                                        )}
+                                                    </div>
+
+                                                    <p className="text-xs text-[#6D28D9] mt-1.5 font-medium">
+                                                        영상을 보며 아래 칸에 예문을 적고 소리 내어 연습하세요! (자동 저장됨)
+                                                    </p>
+                                                </div>
+
+                                                {/* 포도알 Repetition Check */}
+                                                <div className="bg-white/80 backdrop-blur-sm p-3.5 rounded-xl border border-purple-100">
+                                                    <div className="flex justify-between items-center mb-2.5">
+                                                        <span className="text-xs font-extrabold text-[#5B21B6] flex items-center gap-1.5">
+                                                            <span>🍇</span> Repetition Check
+                                                        </span>
+                                                        <span className="text-xs font-extrabold bg-[#F5F3FF] text-[#7C3AED] px-2.5 py-0.5 rounded-full">
+                                                            {repetitionCount} / 10 Sets
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-10 gap-1 sm:gap-2">
+                                                        {[...Array(10)].map((_, i) => (
+                                                            <button 
+                                                                key={i}
+                                                                type="button"
+                                                                onClick={() => toggleRepetition(i)}
+                                                                className={`
+                                                                    aspect-square w-full rounded-full border-2 transition-all duration-200 flex items-center justify-center active:scale-90
+                                                                    ${i < repetitionCount 
+                                                                        ? 'bg-purple-100 border-[#7C3AED] shadow-sm' 
+                                                                        : 'bg-white border-[#C4B5FD] border-dashed'
+                                                                    }
+                                                                `}
+                                                            >
+                                                                {i < repetitionCount ? <span className="text-sm sm:text-xl leading-none">🍇</span> : <span className="text-[10px] font-bold text-purple-300">{i+1}</span>}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* 10문장 입력 및 학습 카드 리스트 */}
+                                            <div className="space-y-4 sm:space-y-5">
+                                                {sentences.map((item, idx) => (
+                                                    <div key={idx} className={`group relative bg-white border rounded-2xl p-3.5 sm:p-4 transition-all duration-300 ${hideEnglish ? 'border-[#7C3AED] shadow-md shadow-purple-100' : 'border-slate-200/80 hover:border-[#C4B5FD]'}`}>
+                                                        <div className={`absolute -left-2 -top-2.5 w-7 h-7 rounded-full flex items-center justify-center font-extrabold text-xs shadow-md transition-colors ${hideEnglish ? 'bg-[#7C3AED] text-white' : 'bg-slate-800 text-white'}`}>
+                                                            {idx + 1}
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1">
+                                                            <div className="relative flex flex-col">
+                                                                <div className="flex justify-between items-center mb-1 pl-4 md:pl-0">
+                                                                    <label className={`text-[11px] font-bold uppercase tracking-wider ${hideEnglish ? 'text-[#7C3AED]' : 'text-slate-400'}`}>
+                                                                        {idx === 0 ? "Core Pattern (영어)" : "English"}
+                                                                    </label>
+                                                                    <div className="flex items-center gap-1">
+                                                                        <button 
+                                                                            onClick={() => speakText(item.eng)}
+                                                                            className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-[#7C3AED] active:scale-90 transition-colors"
+                                                                            title="듣기"
+                                                                        >
+                                                                            <Volume2 size={16} />
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => toggleHighlight(idx)}
+                                                                            className={`p-1.5 rounded-full hover:bg-slate-100 active:scale-90 transition-colors ${item.highlight ? 'text-yellow-600 bg-yellow-100' : 'text-slate-300'}`}
+                                                                            title="어려운 문장 하이라이트"
+                                                                        >
+                                                                            <Highlighter size={14} />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div 
+                                                                    onClick={() => toggleReveal(idx)} 
+                                                                    className={`relative flex-1 rounded-xl overflow-hidden transition-all duration-300 cursor-pointer 
+                                                                        ${hideEnglish && !revealedIndices.includes(idx) ? 'bg-slate-900' : (item.highlight ? 'bg-yellow-50' : 'bg-slate-50')}
+                                                                    `}
+                                                                >
+                                                                    <textarea 
+                                                                        value={item.eng} 
+                                                                        onChange={(e) => updateSentence(idx, 'eng', e.target.value)} 
+                                                                        placeholder={`예문 ${idx + 1} (영어)`} 
+                                                                        className={`w-full h-full bg-transparent border-none text-slate-800 font-bold text-base p-3 focus:ring-0 outline-none resize-none transition-all duration-300 leading-snug
+                                                                            ${hideEnglish && !revealedIndices.includes(idx) ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+                                                                        `} 
+                                                                        rows={2} 
+                                                                        disabled={hideEnglish && !revealedIndices.includes(idx)} 
+                                                                    />
+                                                                    {hideEnglish && !revealedIndices.includes(idx) && (
+                                                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                            <span className="text-3xl">🙈</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-col">
+                                                                <label className="text-[11px] font-bold text-slate-400 mb-1 uppercase tracking-wider">Meaning (한국어)</label>
+                                                                <div className="bg-slate-50 rounded-xl p-3 flex-1">
+                                                                    <textarea 
+                                                                        value={item.kor} 
+                                                                        onChange={(e) => updateSentence(idx, 'kor', e.target.value)} 
+                                                                        placeholder="한국어 뜻 / 내가 만든 예문 해석" 
+                                                                        className="w-full h-full bg-transparent border-none text-slate-700 text-sm sm:text-base focus:ring-0 outline-none resize-none font-medium leading-snug" 
+                                                                        rows={2}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )
+                                ) : (
+                                    /* Inspo Notes (저장한 표현) 탭 */
+                                    <>
+                                            {/* 오늘의 패턴 & 포도알 반복 체크 카드 */}
+                                            <div className="mb-6 p-4 sm:p-6 bg-gradient-to-br from-[#F5F3FF] to-[#EDE9FE]/60 rounded-2xl border border-[#DDD6FE]">
+                                                <div className="text-center relative group mb-5">
+                                                    <div className="inline-flex items-center gap-1.5 bg-white px-3.5 py-1 rounded-full border border-purple-200/80 shadow-sm mb-2">
+                                                        <span className="text-[11px] font-extrabold text-[#7C3AED] uppercase tracking-wider">Day {currentDay} Pattern</span>
+                                                        <button 
+                                                            onClick={() => speakText(topic.split('(')[0])}
+                                                            className="text-[#7C3AED] hover:text-[#5B21B6] p-0.5 active:scale-90"
+                                                            title="패턴 발음 듣기"
+                                                        >
+                                                            <Volume2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        {isEditingTopic ? (
+                                                            <div className="flex items-center gap-2 w-full justify-center">
+                                                                <input 
+                                                                    type="text"
+                                                                    value={tempTopic}
+                                                                    onChange={(e) => setTempTopic(e.target.value)}
+                                                                    className="text-base sm:text-xl font-extrabold text-slate-800 bg-white px-3 py-1 rounded-xl border-2 border-purple-400 focus:outline-none text-center flex-1 max-w-md"
+                                                                    autoFocus
+                                                                    onKeyDown={(e) => {
+                                                                        if(e.key === 'Enter') {
+                                                                            setTopic(tempTopic);
+                                                                            saveDayData(sentences, repetitionCount, tempTopic);
+                                                                            setIsEditingTopic(false);
+                                                                        }
+                                                                    }}
+                                                                />
+                                                                <button 
+                                                                    onClick={() => { 
+                                                                        setTopic(tempTopic); 
+                                                                        saveDayData(sentences, repetitionCount, tempTopic); 
+                                                                        setIsEditingTopic(false); 
+                                                                    }} 
+                                                                    className="text-green-600 bg-white p-2 rounded-xl shadow-sm"
+                                                                >
+                                                                    <Check size={18}/>
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => setIsEditingTopic(false)} 
+                                                                    className="text-red-500 bg-white p-2 rounded-xl shadow-sm"
+                                                                >
+                                                                    <X size={18}/>
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <h2 
+                                                                className="text-lg sm:text-2xl font-black text-slate-800 break-keep cursor-pointer hover:text-[#7C3AED] transition-colors flex items-center justify-center gap-1.5 leading-snug"
+                                                                onClick={() => { setTempTopic(topic); setIsEditingTopic(true); }}
+                                                                title="클릭하여 주제 수정"
+                                                            >
+                                                                <span>{topic}</span>
+                                                                <Edit2 size={14} className="text-slate-400 shrink-0" />
+                                                            </h2>
+                                                        )}
+                                                    </div>
+
+                                                    <p className="text-xs text-[#6D28D9] mt-1.5 font-medium">
+                                                        패턴을 활용해 나만의 응용 문장 10개를 만들고 소리 내어 연습하세요!
+                                                    </p>
+                                                </div>
+
+                                                {/* 포도알 Repetition Check (아이폰 화면 폭에 딱 맞게 10개 배치) */}
+                                                <div className="bg-white/80 backdrop-blur-sm p-3.5 rounded-xl border border-purple-100">
+                                                    <div className="flex justify-between items-center mb-2.5">
+                                                        <span className="text-xs font-extrabold text-[#5B21B6] flex items-center gap-1.5">
+                                                            <span>🍇</span> Repetition Check
+                                                        </span>
+                                                        <span className="text-xs font-extrabold bg-[#F5F3FF] text-[#7C3AED] px-2.5 py-0.5 rounded-full">
+                                                            {repetitionCount} / 10 Sets
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-10 gap-1 sm:gap-2">
+                                                        {[...Array(10)].map((_, i) => (
+                                                            <button 
+                                                                key={i}
+                                                                type="button"
+                                                                onClick={() => toggleRepetition(i)}
+                                                                className={`
+                                                                    aspect-square w-full rounded-full border-2 transition-all duration-200 flex items-center justify-center active:scale-90
+                                                                    ${i < repetitionCount 
+                                                                        ? 'bg-purple-100 border-[#7C3AED] shadow-sm' 
+                                                                        : 'bg-white border-[#C4B5FD] border-dashed'
+                                                                    }
+                                                                `}
+                                                            >
+                                                                {i < repetitionCount ? <span className="text-sm sm:text-xl leading-none">🍇</span> : <span className="text-[10px] font-bold text-purple-300">{i+1}</span>}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* 10문장 입력 및 학습 카드 리스트 */}
+                                            <div className="space-y-4 sm:space-y-5">
+                                                {sentences.map((item, idx) => (
+                                                    <div key={idx} className={`group relative bg-white border rounded-2xl p-3.5 sm:p-4 transition-all duration-300 ${hideEnglish ? 'border-[#7C3AED] shadow-md shadow-purple-100' : 'border-slate-200/80 hover:border-[#C4B5FD]'}`}>
+                                                        <div className={`absolute -left-2 -top-2.5 w-7 h-7 rounded-full flex items-center justify-center font-extrabold text-xs shadow-md transition-colors ${hideEnglish ? 'bg-[#7C3AED] text-white' : 'bg-slate-800 text-white'}`}>
+                                                            {idx + 1}
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1">
+                                                            <div className="relative flex flex-col">
+                                                                <div className="flex justify-between items-center mb-1 pl-4 md:pl-0">
+                                                                    <label className={`text-[11px] font-bold uppercase tracking-wider ${hideEnglish ? 'text-[#7C3AED]' : 'text-slate-400'}`}>
+                                                                        {idx === 0 ? "Core Pattern (영어)" : "English"}
+                                                                    </label>
+                                                                    <div className="flex items-center gap-1">
+                                                                        <button 
+                                                                            onClick={() => speakText(item.eng)}
+                                                                            className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-[#7C3AED] active:scale-90 transition-colors"
+                                                                            title="듣기"
+                                                                        >
+                                                                            <Volume2 size={16} />
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => toggleHighlight(idx)}
+                                                                            className={`p-1.5 rounded-full hover:bg-slate-100 active:scale-90 transition-colors ${item.highlight ? 'text-yellow-600 bg-yellow-100' : 'text-slate-300'}`}
+                                                                            title="어려운 문장 하이라이트"
+                                                                        >
+                                                                            <Highlighter size={14} />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div 
+                                                                    onClick={() => toggleReveal(idx)} 
+                                                                    className={`relative flex-1 rounded-xl overflow-hidden transition-all duration-300 cursor-pointer 
+                                                                        ${hideEnglish && !revealedIndices.includes(idx) ? 'bg-slate-900' : (item.highlight ? 'bg-yellow-50' : 'bg-slate-50')}
+                                                                    `}
+                                                                >
+                                                                    <textarea 
+                                                                        value={item.eng} 
+                                                                        onChange={(e) => updateSentence(idx, 'eng', e.target.value)} 
+                                                                        placeholder={`예문 ${idx + 1} (영어)`} 
+                                                                        className={`w-full h-full bg-transparent border-none text-slate-800 font-bold text-base p-3 focus:ring-0 outline-none resize-none transition-all duration-300 leading-snug
+                                                                            ${hideEnglish && !revealedIndices.includes(idx) ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+                                                                        `} 
+                                                                        rows={2} 
+                                                                        disabled={hideEnglish && !revealedIndices.includes(idx)} 
+                                                                    />
+                                                                    {hideEnglish && !revealedIndices.includes(idx) && (
+                                                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                            <span className="text-3xl">🙈</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-col">
+                                                                <label className="text-[11px] font-bold text-slate-400 mb-1 uppercase tracking-wider">Meaning (한국어)</label>
+                                                                <div className="bg-slate-50 rounded-xl p-3 flex-1">
+                                                                    <textarea 
+                                                                        value={item.kor} 
+                                                                        onChange={(e) => updateSentence(idx, 'kor', e.target.value)} 
+                                                                        placeholder="한국어 뜻 / 내가 만든 예문 해석" 
+                                                                        className="w-full h-full bg-transparent border-none text-slate-700 text-sm sm:text-base focus:ring-0 outline-none resize-none font-medium leading-snug" 
+                                                                        rows={2}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )
+                                ) : (
+                                    /* Inspo Notes 탭 */
+                                    <>
+                                        <div className="mb-6 p-4 sm:p-6 bg-[#FFF1F2] rounded-2xl border border-[#FFE4E6]">
+                                            <div className="flex justify-between items-center mb-3">
+                                                <h3 className="font-bold text-[#BE123C] flex items-center gap-2 text-sm sm:text-base">
+                                                    <StickyNote className="w-4 h-4 sm:w-5 sm:h-5"/>
+                                                    Add New Note
+                                                </h3>
+                                                <span className="text-xs font-bold text-[#BE123C] bg-white px-2.5 py-1 rounded-full shadow-sm">
+                                                    총 {notes.length}개
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-col gap-2.5">
+                                                <input 
+                                                    type="text" 
+                                                    value={newNoteEng} 
+                                                    onChange={(e) => setNewNoteEng(e.target.value)} 
+                                                    placeholder="English Expression (ex: I'm used to getting up early.)" 
+                                                    className="w-full bg-white border-none rounded-xl px-3.5 py-3 text-sm focus:ring-2 focus:ring-[#BE123C] placeholder:text-[#BE123C]/40 outline-none text-slate-800 font-medium"
+                                                    onKeyDown={(e) => e.key === 'Enter' && addNote()}
+                                                />
+                                                <div className="flex flex-col sm:flex-row gap-2">
+                                                    <input 
+                                                        type="text" 
+                                                        value={newNoteKor} 
+                                                        onChange={(e) => setNewNoteKor(e.target.value)} 
+                                                        placeholder="Meaning / Context (뜻)" 
+                                                        className="flex-1 bg-white border-none rounded-xl px-3.5 py-3 text-sm focus:ring-2 focus:ring-[#BE123C] placeholder:text-[#BE123C]/40 outline-none text-slate-800"
+                                                        onKeyDown={(e) => e.key === 'Enter' && addNote()}
+                                                    />
+                                                    <button 
+                                                        onClick={addNote} 
+                                                        className="bg-[#BE123C] text-white px-5 py-3 rounded-xl hover:bg-[#9F1239] active:scale-95 transition-all font-bold flex items-center justify-center gap-1.5 text-sm"
+                                                    >
+                                                        <Plus size={18} /> 추가하기
+                                                    </button>
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                                    <span className="text-xs font-bold text-[#BE123C]/60">태그:</span>
+                                                    {['패턴응용', '일상', '구동사'].map(tag => (
+                                                        <button 
+                                                            key={tag}
+                                                            onClick={() => setNewNoteTag(newNoteTag === tag ? "" : tag)}
+                                                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${newNoteTag === tag ? 'bg-[#BE123C] text-white shadow-sm' : 'bg-white text-slate-500 border border-slate-200'}`}
+                                                        >
+                                                            #{tag}
+                                                        </button>
+                                                    ))}
+                                                    <input 
+                                                        type="text" 
+                                                        value={newNoteTag} 
+                                                        onChange={(e) => setNewNoteTag(e.target.value)} 
+                                                        placeholder="직접 입력"
+                                                        className="w-24 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs focus:ring-1 focus:ring-[#BE123C] outline-none text-slate-600"
+                                                        onKeyDown={(e) => e.key === 'Enter' && addNote()}
+                                                        list="tag-suggestions"
+                                                    />
+                                                    <datalist id="tag-suggestions">
+                                                        {allTags.filter(t => !['패턴응용', '일상', '구동사'].includes(t)).map(t => <option key={t} value={t} />)}
+                                                    </datalist>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* 검색 + 태그 필터 + 도구 */}
+                                        <div className="mb-5 space-y-2.5">
+                                            <div className="flex flex-col sm:flex-row gap-2">
+                                                <input 
+                                                    type="text"
+                                                    value={searchQuery}
+                                                    onChange={(e) => { setSearchQuery(e.target.value); setNotesPage(1); }}
+                                                    placeholder="🔍 표현 검색 (영어 또는 한국어)"
+                                                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-[#BE123C] outline-none text-slate-700 font-medium"
+                                                />
+                                                <div className="flex gap-2">
+                                                    <button 
+                                                        onClick={generateRandomNotes}
+                                                        className="flex-1 sm:flex-none bg-amber-50 border border-amber-200 text-amber-700 px-3.5 py-2.5 rounded-xl hover:bg-amber-100 active:scale-95 transition-all font-bold text-xs sm:text-sm flex items-center justify-center gap-1 whitespace-nowrap"
+                                                    >
+                                                        🎲 랜덤복습
+                                                    </button>
+                                                    <button 
+                                                        onClick={exportNotesCSV}
+                                                        className="flex-1 sm:flex-none bg-emerald-50 border border-emerald-200 text-emerald-700 px-3.5 py-2.5 rounded-xl hover:bg-emerald-100 active:scale-95 transition-all font-bold text-xs sm:text-sm flex items-center justify-center gap-1 whitespace-nowrap"
+                                                    >
+                                                        📥 CSV 저장
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            
+                                            {allTags.length > 0 && (
+                                                <div className="flex flex-wrap gap-1.5 items-center">
+                                                    <span className="text-xs font-bold text-slate-400">태그:</span>
+                                                    <button 
+                                                        onClick={() => { setSelectedTag(""); setNotesPage(1); }}
+                                                        className={`px-2.5 py-1 rounded-full text-xs font-bold transition-colors ${!selectedTag ? 'bg-[#BE123C] text-white' : 'bg-slate-100 text-slate-500'}`}
+                                                    >
+                                                        전체
+                                                    </button>
+                                                    {allTags.map(tag => (
+                                                        <button 
+                                                            key={tag}
+                                                            onClick={() => { setSelectedTag(selectedTag === tag ? "" : tag); setNotesPage(1); }}
+                                                            className={`px-2.5 py-1 rounded-full text-xs font-bold transition-colors ${selectedTag === tag ? 'bg-[#BE123C] text-white' : 'bg-slate-100 text-slate-500'}`}
+                                                        >
+                                                            #{tag}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {(searchQuery || selectedTag || showHighlightedOnly) && (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-slate-500">
+                                                        필터 결과: <strong className="text-[#BE123C]">{filteredNotes.length}</strong>개
+                                                    </span>
+                                                    <button 
+                                                        onClick={() => { setSearchQuery(""); setSelectedTag(""); setShowHighlightedOnly(false); setNotesPage(1); }}
+                                                        className="text-xs text-slate-400 hover:text-red-400 underline"
+                                                    >
+                                                        초기화
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* 랜덤 복습 모달 영역 */}
+                                        {showRandomReview && randomNotes.length > 0 && (
+                                            <div className="mb-6 p-4 sm:p-6 bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border border-amber-200 relative">
+                                                <button 
+                                                    onClick={() => setShowRandomReview(false)}
+                                                    className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-slate-600"
+                                                >
+                                                    <X size={18}/>
+                                                </button>
+                                                <h3 className="font-bold text-amber-800 flex items-center gap-2 mb-3 text-sm sm:text-base">
+                                                    <span>🎲</span> 오늘의 랜덤 복습 ({randomNotes.length}개)
+                                                </h3>
+                                                <div className="space-y-2.5">
+                                                    {randomNotes.map((note, idx) => (
+                                                        <div 
+                                                            key={note.id} 
+                                                            className="bg-white rounded-xl p-3.5 border border-amber-100 shadow-sm cursor-pointer"
+                                                            onClick={() => toggleReveal(idx + 2000)}
+                                                        >
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <div className="flex-1">
+                                                                    <div className={`relative rounded-lg overflow-hidden transition-all duration-300 ${hideEnglish && !revealedIndices.includes(idx + 2000) ? 'bg-slate-900 p-2.5' : ''}`}>
+                                                                        <p className={`text-sm sm:text-base font-bold text-slate-800 transition-opacity ${hideEnglish && !revealedIndices.includes(idx + 2000) ? 'opacity-0' : 'opacity-100'}`}>{note.eng}</p>
+                                                                        {hideEnglish && !revealedIndices.includes(idx + 2000) && (
+                                                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                                                <span className="text-2xl">🙈</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <p className="text-xs sm:text-sm text-slate-600 mt-1">{note.kor}</p>
+                                                                </div>
+                                                                <button 
+                                                                    onClick={(e) => { e.stopPropagation(); speakText(note.eng); }}
+                                                                    className="p-1.5 rounded-full hover:bg-amber-100 text-slate-400 hover:text-amber-600 shrink-0"
+                                                                >
+                                                                    <Volume2 size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <button 
+                                                    onClick={generateRandomNotes}
+                                                    className="mt-3 w-full py-2.5 bg-amber-100 text-amber-800 rounded-xl font-bold text-xs sm:text-sm hover:bg-amber-200 transition-colors"
+                                                >
+                                                    🔄 다시 뽑기
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {/* 노트 리스트 */}
+                                        <div className="space-y-4">
+                                            {filteredNotes.length === 0 ? (
+                                                <div className="text-center py-10 text-slate-400">
+                                                    <Sparkles className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                                                    <p className="text-sm font-medium">{notes.length === 0 ? "아직 기록된 표현이 없어요." : "조건에 맞는 표현이 없습니다."}</p>
+                                                    {notes.length === 0 && <p className="text-xs mt-1">나만의 응용 표현이나 기억하고 싶은 문장을 추가해보세요!</p>}
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {currentNotes.map((note, idx) => (
+                                                        <div key={note.id} className={`group relative bg-white border rounded-2xl p-3.5 sm:p-4 transition-all duration-300 ${hideEnglish ? 'border-[#BE123C] shadow-md shadow-pink-100' : 'border-slate-200/80'}`}>
+                                                            <div className="flex justify-between items-center mb-2">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-[10px] font-bold text-[#BE123C] bg-[#FFF1F2] px-2 py-0.5 rounded-md">
+                                                                        {note.date}
+                                                                    </span>
+                                                                    {note.tag && (
+                                                                        <span 
+                                                                            className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md cursor-pointer"
+                                                                            onClick={() => { setSelectedTag(note.tag); setNotesPage(1); }}
+                                                                        >
+                                                                            #{note.tag}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-1">
+                                                                    {editingNoteId === note.id ? (
+                                                                        <div className="flex gap-1.5">
+                                                                            <button onClick={saveEdit} className="p-1.5 text-green-600 bg-green-50 rounded-lg" title="저장">
+                                                                                <Check size={16}/>
+                                                                            </button>
+                                                                            <button onClick={cancelEdit} className="p-1.5 text-red-500 bg-red-50 rounded-lg" title="취소">
+                                                                                <X size={16}/>
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="flex items-center gap-1">
+                                                                            <button onClick={() => speakText(note.eng)} className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-[#BE123C]">
+                                                                                <Volume2 size={15} />
+                                                                            </button>
+                                                                            <button onClick={() => startEditing(note)} className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-[#BE123C]">
+                                                                                <Edit2 size={15} />
+                                                                            </button>
+                                                                            <button onClick={() => toggleHighlight(null, true, note.id)} className={`p-1.5 rounded-full hover:bg-slate-100 ${note.highlight ? 'text-yellow-600 bg-yellow-100' : 'text-slate-300'}`}>
+                                                                                <Highlighter size={15} />
+                                                                            </button>
+                                                                            <button onClick={() => deleteNote(note.id)} className="p-1.5 text-slate-300 hover:text-red-500">
+                                                                                <Trash2 size={15} />
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                                                                {editingNoteId === note.id ? (
+                                                                    <div className="bg-slate-50 border border-purple-200 rounded-xl p-2.5">
+                                                                        <textarea 
+                                                                            value={editEng} 
+                                                                            onChange={(e) => setEditEng(e.target.value)} 
+                                                                            className="w-full bg-transparent border-none text-slate-800 font-bold text-sm focus:ring-0 outline-none resize-none"
+                                                                            rows={2}
+                                                                        />
+                                                                    </div>
+                                                                ) : (
+                                                                    <div 
+                                                                        onClick={() => toggleReveal(idx + 1000)} 
+                                                                        className={`relative rounded-xl overflow-hidden transition-all duration-300 cursor-pointer min-h-[60px] flex items-center p-3
+                                                                            ${hideEnglish && !revealedIndices.includes(idx + 1000) ? 'bg-slate-900' : (note.highlight ? 'bg-yellow-50' : 'bg-slate-50')}
+                                                                        `}
+                                                                    >
+                                                                        <p className={`text-sm sm:text-base font-bold text-slate-800 w-full break-words ${hideEnglish && !revealedIndices.includes(idx + 1000) ? 'opacity-0' : 'opacity-100'}`}>
+                                                                            {note.eng}
+                                                                        </p>
+                                                                        {hideEnglish && !revealedIndices.includes(idx + 1000) && (
+                                                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                                <span className="text-3xl">🙈</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+
+                                                                {editingNoteId === note.id ? (
+                                                                    <div className="bg-slate-50 border border-purple-200 rounded-xl p-2.5 flex flex-col gap-1.5">
+                                                                        <textarea 
+                                                                            value={editKor} 
+                                                                            onChange={(e) => setEditKor(e.target.value)} 
+                                                                            className="w-full bg-transparent border-none text-slate-700 text-sm focus:ring-0 outline-none resize-none"
+                                                                            rows={2}
+                                                                        />
+                                                                        <input 
+                                                                            type="text"
+                                                                            value={editTag}
+                                                                            onChange={(e) => setEditTag(e.target.value)}
+                                                                            placeholder="#태그"
+                                                                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs outline-none text-slate-600"
+                                                                        />
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="bg-slate-50 rounded-xl p-3 min-h-[60px] flex items-center">
+                                                                        <p className="text-sm text-slate-700 w-full break-words font-medium">
+                                                                            {note.kor}
+                                                                        </p>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    
+                                                    {filteredNotes.length > NOTES_PER_PAGE && (
+                                                        <div className="flex justify-center items-center gap-4 mt-6">
+                                                            <button 
+                                                                onClick={() => paginate(Math.max(1, notesPage - 1))}
+                                                                disabled={notesPage === 1}
+                                                                className={`flex items-center gap-1 px-3.5 py-2 rounded-xl text-xs font-bold ${notesPage === 1 ? 'text-slate-300' : 'text-[#BE123C] bg-[#FFF1F2]'}`}
+                                                            >
+                                                                <ChevronLeft size={15} /> 이전
+                                                            </button>
+                                                            <span className="text-xs font-bold text-slate-600">
+                                                                {notesPage} / {totalPages}
+                                                            </span>
+                                                            <button 
+                                                                onClick={() => paginate(Math.min(totalPages, notesPage + 1))}
+                                                                disabled={notesPage === totalPages}
+                                                                className={`flex items-center gap-1 px-3.5 py-2 rounded-xl text-xs font-bold ${notesPage === totalPages ? 'text-slate-300' : 'text-[#BE123C] bg-[#FFF1F2]'}`}
+                                                            >
+                                                                다음 <ChevronRight size={15} />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                                
+                                <div className="mt-6 text-center text-[11px] text-slate-400">
+                                    Konee's English · 기기에 저장되며, 구글 로그인 및 Firebase 권한 설정 시 클라우드에도 저장됩니다.
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* SIDEBAR (Timer, Streak, Calendar - 모바일에서는 하단에 배치되어 학습 집중도 향상) */}
+                        <div className="lg:col-span-4 space-y-5 order-2 lg:order-1">
+                            {/* Timer */}
+                            <div className="bg-white rounded-[2rem] p-5 sm:p-6 shadow-xl shadow-slate-200/60 border border-slate-100 relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-1.5 bg-slate-100">
+                                    <div 
+                                        className="h-full bg-gradient-to-r from-[#C4B5FD] to-[#7C3AED] transition-all duration-1000 ease-linear"
+                                        style={{ width: `${Math.min(((3600 - timeLeft) / 3600) * 100, 100)}%` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between items-center mb-4 mt-1">
+                                    <h3 className="font-bold text-base text-slate-700 flex items-center gap-2">
+                                        <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-red-400 animate-pulse' : 'bg-slate-300'}`}></div>
+                                        Study Timer
+                                    </h3>
+                                    <span className="text-xs font-bold text-[#7C3AED] bg-[#F3E8FF] px-3 py-1 rounded-full">60min Goal</span>
+                                </div>
+                                <div className="text-center mb-6">
+                                    <div className="text-6xl sm:text-7xl font-black text-slate-800 tracking-tighter tabular-nums">
+                                        {formatTime(timeLeft)}
+                                    </div>
+                                    <p className="text-slate-400 text-xs mt-1.5 font-medium">
+                                        {isActive ? "Keep burning! 🔥" : "Ready to focus?"}
+                                    </p>
+                                </div>
+                                <div className="flex justify-center gap-4">
+                                    <button onClick={handleStartTimer} className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-white shadow-lg transition-transform active:scale-95 ${isActive ? 'bg-orange-400 hover:bg-orange-500' : 'bg-[#7C3AED] hover:bg-[#6D28D9]'}`}>
+                                        {isActive ? <Pause fill="currentColor" /> : <Play fill="currentColor" className="ml-1" />}
+                                    </button>
+                                    <button onClick={handleResetTimer} className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-colors active:scale-95">
+                                        <RotateCcw size={20} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Streak Counter */}
+                            <div className="bg-gradient-to-br from-[#7C3AED] to-[#5B21B6] text-white rounded-[2rem] p-5 sm:p-6 shadow-xl relative overflow-hidden">
+                                <div className="absolute top-[-10px] right-[-10px] w-24 h-24 bg-yellow-400 rounded-full blur-[50px] opacity-30 pointer-events-none"></div>
+                                <div className="flex items-center justify-between relative z-10">
+                                    <div>
+                                        <p className="text-xs font-bold text-white/60 uppercase tracking-wider mb-1">Current Streak</p>
+                                        <div className="flex items-baseline gap-2">
+                                            <span className="text-4xl sm:text-5xl font-black">{streak.current}</span>
+                                            <span className="text-base font-bold text-white/80">일 연속</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-5xl">{streak.current >= 7 ? '🔥' : streak.current >= 3 ? '✨' : '💪'}</div>
+                                </div>
+                                <div className="mt-4 pt-3.5 border-t border-white/10 flex justify-between items-center relative z-10">
+                                    <div className="flex items-center gap-2">
+                                        <Trophy size={14} className="text-yellow-300"/>
+                                        <span className="text-xs font-bold text-white/70">최장 기록</span>
+                                    </div>
+                                    <span className="text-sm font-black text-yellow-300">{streak.best}일</span>
+                                </div>
+                            </div>
+
+                            {/* Monthly Streak Calendar */}
+                            <div className="bg-[#111827] text-white rounded-[2rem] p-5 sm:p-6 shadow-xl relative overflow-hidden">
+                                <div className="absolute top-[-20px] right-[-20px] w-32 h-32 bg-[#7C3AED] rounded-full blur-[60px] opacity-40 pointer-events-none"></div>
+                                <h3 className="font-bold text-base mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-400" />Streak Log</h3>
+                                
+                                <div className="flex justify-between items-center mb-3 px-1 relative z-10">
+                                    <button onClick={() => changeMonth(-1)} className="text-white/50 hover:text-white p-1.5">
+                                        <ChevronLeft size={18} />
+                                    </button>
+                                    <h3 className="font-bold text-base text-yellow-400">
+                                        {viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                                    </h3>
+                                    <button onClick={() => changeMonth(1)} className="text-white/50 hover:text-white p-1.5">
+                                        <ChevronRight size={18} />
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-7 gap-y-2.5 gap-x-1 text-center">
+                                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, idx) => (
+                                        <div key={idx} className="text-[10px] font-bold text-[#A78BFA] uppercase mb-1">{d}</div>
+                                    ))}
+                                    {Array.from({ length: getFirstDayOfMonth(viewDate.getFullYear(), viewDate.getMonth()) }).map((_, i) => (
+                                        <div key={`empty-${i}`} />
+                                    ))}
+                                    {Array.from({ length: getDaysInMonth(viewDate.getFullYear(), viewDate.getMonth()) }).map((_, i) => {
+                                        const day = i + 1;
+                                        const dateStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                        
+                                        const record = completedDates.find(d => d.date === dateStr);
+                                        const isCompleted = !!record;
+                                        const stampType = record ? record.type : null;
+                                        
+                                        const todayStr = getLocalToday();
+                                        const isToday = dateStr === todayStr;
+                                        
+                                        let stampStyle = '';
+                                        let stampText = day;
+                                        
+                                        if (isCompleted) {
+                                            if (stampType === '30') {
+                                                stampStyle = 'bg-slate-200 border-slate-300 text-slate-600 scale-105';
+                                                stampText = "☆";
+                                            } else {
+                                                stampStyle = 'bg-yellow-400 border-yellow-400 text-black shadow-md shadow-yellow-400/20 scale-105';
+                                                stampText = "★";
+                                            }
+                                        } else if (isToday) {
+                                            stampStyle = 'bg-white/10 border-[#7C3AED] text-white ring-2 ring-[#7C3AED]/50';
+                                        } else {
+                                            stampStyle = 'bg-transparent border-transparent text-white/40';
+                                        }
+
+                                        return (
+                                            <div key={day} className="flex flex-col items-center">
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border transition-all ${stampStyle}`}>
+                                                    {stampText}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <div className="mt-4 flex justify-center gap-4 text-[10px] text-white/50">
+                                    <div className="flex items-center gap-1"><span className="text-yellow-400">★</span> 60min</div>
+                                    <div className="flex items-center gap-1"><span className="text-slate-300">☆</span> 30min</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<StudyApp />);
+    </script>
+</body>
+</html>
