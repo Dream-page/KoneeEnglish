@@ -1,0 +1,25 @@
+name: Konee 9PM Web Push
+on:
+  schedule:
+    # 21:00 KST = 12:00 UTC; scheduled jobs may be delayed by GitHub.
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install sender dependencies
+        run: npm install --no-save --no-audit --no-fund web-push@3.6.7 firebase-admin@13.4.0
+      - name: Send to one subscribed UID
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          WEB_PUSH_PRIVATE_KEY: ${{ secrets.WEB_PUSH_PRIVATE_KEY }}
+          WEB_PUSH_PUBLIC_KEY: ${{ secrets.WEB_PUSH_PUBLIC_KEY }}
+          TARGET_UID: ${{ secrets.TARGET_UID }}
+        run: node send_push.cjs
